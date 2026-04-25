@@ -1,9 +1,16 @@
+<<<<<<< HEAD
 import e, { type Request, type Response } from "express";
 import User from "../models/user";
 import { generateToken } from "../utils/generateToken";
 import { logActivity } from "../utils/activitieslog";
 import type { Auth } from "mongodb";
 import type { AuthRequest } from "../middleware/auth";
+=======
+import { type Request, type Response } from "express";
+import User from "../models/user";
+import { generateToken } from "../utils/generateToken";
+import { logActivity } from "../utils/activitieslog";
+>>>>>>> a77495f626dbe90aaff470650f7e47812e2b1d22
 //  @desc    Register a new user
 //  @route   POST /api/users/register
 //  @access  Private (Admin & Teacher only)
@@ -42,6 +49,7 @@ export const register = async (
 
         if (newUser) {
             // We don't have req.user type defined , so we use a type assertion to access
+<<<<<<< HEAD
             if ((req as any).user) {  // logged-in admin/teacher
                 await logActivity({
                     userId: (req as any).user._id,  // admin/teacher doing the creation
@@ -56,6 +64,15 @@ export const register = async (
           details: `User ${newUser.email} registered`,
         });
       }
+=======
+            if((req as any).user) {
+                await logActivity({
+                    userId: (req as any).user._id,
+                    action: "User Registration",
+                    details: `Registered new user with email: ${newUser.email}`,
+                });
+            }
+>>>>>>> a77495f626dbe90aaff470650f7e47812e2b1d22
             res.status(201).json({
                 _id: newUser._id,
                 name: newUser.name,
@@ -84,6 +101,7 @@ export const login = async  (req: Request, res: Response): Promise<void> => {
     const user = await User.findOne({ email });
 
     // Check if user exists and password matches
+<<<<<<< HEAD
     if (user && (await user.matchPassword(password))) {
         // generate token and log activity
         generateToken(user._id.toString(), res);       
@@ -96,12 +114,19 @@ export const login = async  (req: Request, res: Response): Promise<void> => {
             studentClass: user.studentClass,
             teacherSubject: user.teacherSubject,
         });
+=======
+    if (user && await user.matchPassword(password)) {
+        // generate token
+        generateToken(user._id.toString(), res);
+        res.json(user)
+>>>>>>> a77495f626dbe90aaff470650f7e47812e2b1d22
     } else {    
         res.status(401).json({ message: "Invalid email or password" });
     }
     } catch (error) {
         res.status(500).json({ message: "Server Error", error});
     }
+<<<<<<< HEAD
 };
 
 //  @desc    Update user (Admin)
@@ -265,3 +290,6 @@ export const logout = async (req: Request, res: Response) => {
         res.status(500).json({ message: "Server Error", error});
     }
 };
+=======
+}
+>>>>>>> a77495f626dbe90aaff470650f7e47812e2b1d22
