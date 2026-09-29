@@ -1,6 +1,6 @@
 import { google, calendar_v3 } from "googleapis";
 import { v4 as uuidv4 } from "uuid";
-import GoogleToken from "../models/googleToken.model";
+import GoogleToken from "../models/googleToken.model.ts";
 
 const scopes = ["https://www.googleapis.com/auth/calendar.events"];
 

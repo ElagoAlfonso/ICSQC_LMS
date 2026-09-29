@@ -11,12 +11,13 @@ import {
   getSubmissions,
   getClassworkGrades,
   saveClassworkGrade,
+  getMyGrades,
   getMySubmissions,
   gradeSubmission,
-} from "../controllers/classwork";
-import { authorize, protect } from "../middleware/auth";
-import { parseClassworkAttachments } from "../middleware/upload";
-import { downloadClassworkAttachment, downloadClassworkSubmissionAttachment } from "../controllers/attachment";
+} from "../controllers/classwork.ts";
+import { authorize, protect } from "../middleware/auth.ts";
+import { parseClassworkAttachments } from "../middleware/upload.ts";
+import { downloadClassworkAttachment, downloadClassworkSubmissionAttachment } from "../controllers/attachment.ts";
 
 const router = express.Router();
 
@@ -32,6 +33,7 @@ router.get("/", protect, getClasswork);
 
 // Get my submissions (Student)
 router.get("/submissions/mine", protect, getMySubmissions);
+router.get("/grades/mine", protect, authorize(["student"]), getMyGrades);
 
 // Published lesson materials are served only to their class members.
 router.get("/:classworkId/attachments/:attachmentId", protect, downloadClassworkAttachment);

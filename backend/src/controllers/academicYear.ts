@@ -1,7 +1,7 @@
 import { type Request, type Response } from "express";
-import { logActivity } from "../utils/activitieslog";
-import AcademicYear from "../models/academicYear";
-import { type AuthRequest } from "../middleware/auth";
+import { logActivity } from "../utils/activitieslog.ts";
+import AcademicYear from "../models/academicYear.ts";
+import { type AuthRequest } from "../middleware/auth.ts";
 
 // @desc     Create a new Academic Year
 // @route    POST /api/academicYear

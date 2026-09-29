@@ -1,6 +1,6 @@
 import multer from "multer";
 import type { NextFunction, Request, Response } from "express";
-import { MAX_ATTACHMENT_SIZE, MAX_ATTACHMENTS_PER_POST } from "../utils/attachments";
+import { MAX_ATTACHMENT_SIZE, MAX_ATTACHMENTS_PER_POST } from "../utils/attachments.ts";
 
 const parser = multer({
   storage: multer.memoryStorage(),

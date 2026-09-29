@@ -1,11 +1,11 @@
 import { type Response } from "express";
-import { type AuthRequest } from "../middleware/auth";
-import Class from "../models/class";
-import Meeting, { type MeetingStatus } from "../models/meeting.model";
-import Subject from "../models/subject";
-import User from "../models/user";
-import { createNotifications } from "../utils/notifications";
-import { createGoogleMeetEvent, deleteGoogleMeetEvent, updateGoogleMeetEvent } from "../services/googleMeet.service";
+import { type AuthRequest } from "../middleware/auth.ts";
+import Class from "../models/class.ts";
+import Meeting, { type MeetingStatus } from "../models/meeting.model.ts";
+import Subject from "../models/subject.ts";
+import User from "../models/user.ts";
+import { createNotifications } from "../utils/notifications.ts";
+import { createGoogleMeetEvent, deleteGoogleMeetEvent, updateGoogleMeetEvent } from "../services/googleMeet.service.ts";
 
 const meetingStatus = (start: Date, end: Date, stored: MeetingStatus): MeetingStatus => {
   if (stored === "Cancelled") return stored;

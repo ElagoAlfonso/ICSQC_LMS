@@ -1,8 +1,8 @@
 import bcrypt from "bcryptjs";
 import type { Request, Response } from "express";
-import User from "../../models/user";
-import { isStrongPassword, passwordRequirementsMessage } from "../../utils/authValidation";
-import { hashResetToken } from "../../utils/generateResetToken";
+import User from "../../models/user.ts";
+import { isStrongPassword, passwordRequirementsMessage } from "../../utils/authValidation.ts";
+import { hashResetToken } from "../../utils/generateResetToken.ts";
 
 const invalidLinkMessage = "Invalid password reset link.";
 const expiredLinkMessage = "This password reset link has expired.";

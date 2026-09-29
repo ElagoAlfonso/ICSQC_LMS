@@ -1,4 +1,4 @@
-import type { AuthRequest } from "../middleware/auth";
+import type { AuthRequest } from "../middleware/auth.ts";
 
 export const AI_RESTRICTED_MESSAGE = "AI assistance isn't available while you're answering an active assessment. Please finish your assessment first.";
 

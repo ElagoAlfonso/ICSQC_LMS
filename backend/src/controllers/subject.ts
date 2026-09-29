@@ -1,12 +1,12 @@
 import { type Express, type Response } from "express";
-import { type AuthRequest } from "../middleware/auth";
-import { logActivity } from "../utils/activitieslog";
-import Subject, { HIGH_SCHOOL_GRADE_LEVELS } from "../models/subject";
-import Class from "../models/class";
-import Announcement from "../models/announcement";
-import User from "../models/user";
-import Exam from "../models/exam";
-import { removeStoredAttachment, saveAttachment, validateAttachment } from "../utils/attachments";
+import { type AuthRequest } from "../middleware/auth.ts";
+import { logActivity } from "../utils/activitieslog.ts";
+import Subject, { HIGH_SCHOOL_GRADE_LEVELS } from "../models/subject.ts";
+import Class from "../models/class.ts";
+import Announcement from "../models/announcement.ts";
+import User from "../models/user.ts";
+import Exam from "../models/exam.ts";
+import { removeStoredAttachment, saveAttachment, validateAttachment } from "../utils/attachments.ts";
 
 const subjectIdForUser = (user: AuthRequest["user"], subjectId: string) => {
   if (user?.role === "admin") return null;

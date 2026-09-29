@@ -1,24 +1,24 @@
 import { type Response } from "express";
-import { type AuthRequest } from "../middleware/auth";
-import { logActivity } from "../utils/activitieslog";
-import Exam from "../models/exam";
-import ExamAttempt from "../models/examAttempt";
-import Submission from "../models/submission";
-import Announcement from "../models/announcement";
-import ReportCard from "../models/reportCard";
-import ReportCardRequest from "../models/reportCardRequest";
-import Timetable from "../models/timetable";
-import User from "../models/user";
-import Class from "../models/class";
-import Subject from "../models/subject";
-import AcademicYear from "../models/academicYear";
-import Classwork from "../models/classwork";
-import ClassworkSubmission from "../models/classworkSubmission";
-import ClassworkGrade from "../models/classworkGrade";
-import { removeStoredAttachment } from "../utils/attachments";
-import { calculateExamDeadline, createQuestionOrder, isExamAvailableToStudent, normalizeExamQuestions } from "../utils/examAccess";
-import { createNotification, createNotifications } from "../utils/notifications";
-import { emitAcademicUpdate } from "../realtime";
+import { type AuthRequest } from "../middleware/auth.ts";
+import { logActivity } from "../utils/activitieslog.ts";
+import Exam from "../models/exam.ts";
+import ExamAttempt from "../models/examAttempt.ts";
+import Submission from "../models/submission.ts";
+import Announcement from "../models/announcement.ts";
+import ReportCard from "../models/reportCard.ts";
+import ReportCardRequest from "../models/reportCardRequest.ts";
+import Timetable from "../models/timetable.ts";
+import User from "../models/user.ts";
+import Class from "../models/class.ts";
+import Subject from "../models/subject.ts";
+import AcademicYear from "../models/academicYear.ts";
+import Classwork from "../models/classwork.ts";
+import ClassworkSubmission from "../models/classworkSubmission.ts";
+import ClassworkGrade from "../models/classworkGrade.ts";
+import { removeStoredAttachment } from "../utils/attachments.ts";
+import { calculateExamDeadline, createQuestionOrder, isExamAvailableToStudent, normalizeExamQuestions } from "../utils/examAccess.ts";
+import { createNotification, createNotifications } from "../utils/notifications.ts";
+import { emitAcademicUpdate } from "../realtime.ts";
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  EXAM CONTROLLERS

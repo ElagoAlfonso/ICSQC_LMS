@@ -1,8 +1,8 @@
 import type { Request, Response } from "express";
-import User from "../../models/user";
-import { sendPasswordResetEmail } from "../../services/mailService";
-import { generateResetToken } from "../../utils/generateResetToken";
-import { isIcsqcEmail, normalizeEmail } from "../../utils/authValidation";
+import User from "../../models/user.ts";
+import { sendPasswordResetEmail } from "../../services/mailService.ts";
+import { generateResetToken } from "../../utils/generateResetToken.ts";
+import { isIcsqcEmail, normalizeEmail } from "../../utils/authValidation.ts";
 
 const genericResetMessage =
   "If an account with that email exists, a password reset link has been sent.";

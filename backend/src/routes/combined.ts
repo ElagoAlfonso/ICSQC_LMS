@@ -1,5 +1,5 @@
 import express from "express";
-import { protect, authorize } from "../middleware/auth";
+import { protect, authorize } from "../middleware/auth.ts";
 import {
   createExam, getExams, getExamById, startExam, updateExam, deleteExam, publishExam, closeExam,
   submitExam, getSubmissions, getMySubmissions, gradeSubmission,
@@ -9,7 +9,7 @@ import {
   generateReportCard, getStudentReportCards, getAllReportCards,
   createReportCardRequest, getReportCardRequests, sendReportCardRequest,
   getAnalytics,
-} from "../controllers/combined";
+} from "../controllers/combined.ts";
 import {
   createClass,
   getClasses,
@@ -25,12 +25,12 @@ import {
   approveClassRequest,
   rejectClassRequest,
   joinClassByCode,
-} from "../controllers/class";
-import { createSubject, getSubjects, getSubjectById, getSubjectWorkspace, createSubjectPost, updateSubject, deleteSubject } from "../controllers/subject";
-import { createAcademicYear, getAllAcademicYears } from "../controllers/academicYear";
-import { getNotifications, markNotificationRead, markAllNotificationsRead } from "../controllers/notifications";
-import { downloadAnnouncementAttachment } from "../controllers/attachment";
-import { parseSubjectAttachments } from "../middleware/upload";
+} from "../controllers/class.ts";
+import { createSubject, getSubjects, getSubjectById, getSubjectWorkspace, createSubjectPost, updateSubject, deleteSubject } from "../controllers/subject.ts";
+import { createAcademicYear, getAllAcademicYears } from "../controllers/academicYear.ts";
+import { getNotifications, markNotificationRead, markAllNotificationsRead } from "../controllers/notifications.ts";
+import { downloadAnnouncementAttachment } from "../controllers/attachment.ts";
+import { parseSubjectAttachments } from "../middleware/upload.ts";
 import {
   createComment,
   getComments,
@@ -40,13 +40,13 @@ import {
   removeReaction,
   changeReaction,
   getReactions,
-} from "../controllers/announcements";
+} from "../controllers/announcements.ts";
 
 const router = express.Router();
 
 // ── Academic Year extra routes ────────────────────────────────────────────
 router.put("/academicYear/:id", protect, authorize(["admin"]), async (req, res) => {
-  const AcademicYear = (await import("../models/academicYear")).default;
+  const AcademicYear = (await import("../models/academicYear.ts")).default;
   try {
     const ay = await AcademicYear.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (!ay) { res.status(404).json({ message: "Not found" }); return; }
@@ -55,7 +55,7 @@ router.put("/academicYear/:id", protect, authorize(["admin"]), async (req, res) 
 });
 
 router.delete("/academicYear/:id", protect, authorize(["admin"]), async (req, res) => {
-  const AcademicYear = (await import("../models/academicYear")).default;
+  const AcademicYear = (await import("../models/academicYear.ts")).default;
   try {
     await AcademicYear.findByIdAndDelete(req.params.id);
     res.json({ message: "Deleted" });
@@ -63,7 +63,7 @@ router.delete("/academicYear/:id", protect, authorize(["admin"]), async (req, re
 });
 
 router.patch("/academicYear/:id/current", protect, authorize(["admin"]), async (req, res) => {
-  const AcademicYear = (await import("../models/academicYear")).default;
+  const AcademicYear = (await import("../models/academicYear.ts")).default;
   try {
     await AcademicYear.updateMany({}, { isCurrent: false });
     const ay = await AcademicYear.findByIdAndUpdate(req.params.id, { isCurrent: true }, { new: true });

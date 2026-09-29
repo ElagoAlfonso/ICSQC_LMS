@@ -8,19 +8,19 @@ import cors from "cors";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createServer, type Server as HttpServer } from "node:http";
 
-import { connectDB, disconnectDB } from "./config/db";
-import userRoutes from "./routes/user";
-import authRoutes from "./routes/authRoutes";
-import LogsRouter from "./routes/activitieslog";
-import academicYearRouter from "./routes/academicYear";
-import classworkRouter from "./routes/classwork";
-import rubricRouter from "./routes/rubric";
-import messagingRouter from "./routes/messaging";
-import combinedRouter from "./routes/combined";
-import meetingRouter from "./routes/meeting.routes";
-import googleRouter from "./routes/google.routes";
-import { closeRealtime, initializeRealtime } from "./realtime";
-import aiRouter from "./routes/ai";
+import { connectDB, disconnectDB } from "./config/db.ts";
+import userRoutes from "./routes/user.ts";
+import authRoutes from "./routes/authRoutes.ts";
+import LogsRouter from "./routes/activitieslog.ts";
+import academicYearRouter from "./routes/academicYear.ts";
+import classworkRouter from "./routes/classwork.ts";
+import rubricRouter from "./routes/rubric.ts";
+import messagingRouter from "./routes/messaging.ts";
+import combinedRouter from "./routes/combined.ts";
+import meetingRouter from "./routes/meeting.routes.ts";
+import googleRouter from "./routes/google.routes.ts";
+import { closeRealtime, initializeRealtime } from "./realtime.ts";
+import aiRouter from "./routes/ai.ts";
 
 dotenv.config({ path: fileURLToPath(new URL("../.env", import.meta.url)) });
 

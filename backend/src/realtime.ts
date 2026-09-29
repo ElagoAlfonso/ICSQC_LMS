@@ -1,11 +1,11 @@
 import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
-import User from "./models/user";
-import Conversation from "./models/conversation";
-import Message from "./models/message";
-import Announcement from "./models/announcement";
-import Class from "./models/class";
-import Subject from "./models/subject";
+import User from "./models/user.ts";
+import Conversation from "./models/conversation.ts";
+import Message from "./models/message.ts";
+import Announcement from "./models/announcement.ts";
+import Class from "./models/class.ts";
+import Subject from "./models/subject.ts";
 
 let io: Server | null = null;
 

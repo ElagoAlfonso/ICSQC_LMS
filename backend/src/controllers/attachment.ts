@@ -1,9 +1,9 @@
 import type { Response } from "express";
-import type { AuthRequest } from "../middleware/auth";
-import Announcement from "../models/announcement";
-import Class from "../models/class";
-import ClassworkSubmission from "../models/classworkSubmission";
-import Classwork from "../models/classwork";
+import type { AuthRequest } from "../middleware/auth.ts";
+import Announcement from "../models/announcement.ts";
+import Class from "../models/class.ts";
+import ClassworkSubmission from "../models/classworkSubmission.ts";
+import Classwork from "../models/classwork.ts";
 
 export const downloadAnnouncementAttachment = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -42,7 +42,7 @@ export const downloadClassworkSubmissionAttachment = async (req: AuthRequest, re
     const submission = await ClassworkSubmission.findById(req.params.submissionId).select("student classwork class attachments");
     if (!submission) { res.status(404).json({ message: "Submission not found." }); return; }
     const isOwner = submission.student.toString() === req.user?._id.toString();
-    const classwork = await (await import("../models/classwork")).default.findById(submission.classwork).select("createdBy");
+    const classwork = await (await import("../models/classwork.ts")).default.findById(submission.classwork).select("createdBy");
     const isTeacher = classwork?.createdBy.toString() === req.user?._id.toString();
     if (req.user?.role !== "admin" && !isOwner && !isTeacher) {
       res.status(403).json({ message: "You are not authorized to access this attachment." });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { calculateExamDeadline, createQuestionOrder, isExamAvailableToStudent } from './examAccess';
+import { calculateExamDeadline, createQuestionOrder, isExamAvailableToStudent } from './examAccess.ts';
 
 describe('isExamAvailableToStudent', () => {
   it('allows a published exam when the student is enrolled and the exam window is valid', () => {

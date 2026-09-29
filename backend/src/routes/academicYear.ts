@@ -1,6 +1,6 @@
 import express  from "express";
-import { createAcademicYear, getAllAcademicYears } from "../controllers/academicYear";
-import { authorize , protect} from "../middleware/auth";
+import { createAcademicYear, getAllAcademicYears } from "../controllers/academicYear.ts";
+import { authorize , protect} from "../middleware/auth.ts";
 
 const academicYearRouter = express.Router();
 

@@ -1,15 +1,15 @@
 import { type Response } from "express";
 import path from "node:path";
-import { type AuthRequest } from "../middleware/auth";
-import { logActivity } from "../utils/activitieslog";
-import { createNotification } from "../utils/notifications";
-import Conversation from "../models/conversation";
-import Message from "../models/message";
-import User from "../models/user";
-import Class from "../models/class";
-import Subject from "../models/subject";
-import { emitToConversation } from "../realtime";
-import { removeStoredAttachment, saveAttachment, validateAttachment } from "../utils/attachments";
+import { type AuthRequest } from "../middleware/auth.ts";
+import { logActivity } from "../utils/activitieslog.ts";
+import { createNotification } from "../utils/notifications.ts";
+import Conversation from "../models/conversation.ts";
+import Message from "../models/message.ts";
+import User from "../models/user.ts";
+import Class from "../models/class.ts";
+import Subject from "../models/subject.ts";
+import { emitToConversation } from "../realtime.ts";
+import { removeStoredAttachment, saveAttachment, validateAttachment } from "../utils/attachments.ts";
 
 const logMessageActivity = (userId: any, action: string, details: Record<string, unknown>) =>
   logActivity({ userId: userId?.toString() || "", action, details: JSON.stringify(details) });

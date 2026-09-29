@@ -1,7 +1,7 @@
 import express from "express";
 
-import { protect, authorize } from "../middleware/auth";
-import { getAllActivities } from "../controllers/activitieslog";
+import { protect, authorize } from "../middleware/auth.ts";
+import { getAllActivities } from "../controllers/activitieslog.ts";
 
 const LogsRouter = express.Router();
 

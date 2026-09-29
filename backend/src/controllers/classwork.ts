@@ -1,17 +1,17 @@
 import { type Response } from "express";
-import { type AuthRequest } from "../middleware/auth";
-import { logActivity } from "../utils/activitieslog";
-import { createNotification, createNotifications } from "../utils/notifications";
-import Classwork from "../models/classwork";
-import ClassworkSubmission from "../models/classworkSubmission";
-import ClassworkGrade from "../models/classworkGrade";
-import Rubric from "../models/rubric";
-import Class from "../models/class";
-import Subject from "../models/subject";
-import User from "../models/user";
-import AcademicYear from "../models/academicYear";
-import { emitAcademicUpdate } from "../realtime";
-import { removeStoredAttachment, saveAttachment, validateAttachment } from "../utils/attachments";
+import { type AuthRequest } from "../middleware/auth.ts";
+import { logActivity } from "../utils/activitieslog.ts";
+import { createNotification, createNotifications } from "../utils/notifications.ts";
+import Classwork from "../models/classwork.ts";
+import ClassworkSubmission from "../models/classworkSubmission.ts";
+import ClassworkGrade from "../models/classworkGrade.ts";
+import Rubric from "../models/rubric.ts";
+import Class from "../models/class.ts";
+import Subject from "../models/subject.ts";
+import User from "../models/user.ts";
+import AcademicYear from "../models/academicYear.ts";
+import { emitAcademicUpdate } from "../realtime.ts";
+import { removeStoredAttachment, saveAttachment, validateAttachment } from "../utils/attachments.ts";
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  VALIDATION HELPERS
@@ -563,7 +563,7 @@ export const submitClasswork = async (req: AuthRequest, res: Response): Promise<
       }));
     } catch (uploadError) {
       for (const storagePath of savedPaths) {
-        try { await (await import("../utils/attachments")).removeStoredAttachment(storagePath); } catch { /* best effort cleanup */ }
+        try { await (await import("../utils/attachments.ts")).removeStoredAttachment(storagePath); } catch { /* best effort cleanup */ }
       }
       res.status(400).json({ message: (uploadError as Error).message || "Unable to upload submission files." });
       return;
@@ -728,7 +728,7 @@ export const saveClassworkGrade = async (req: AuthRequest, res: Response): Promi
     }
     grade.score = resolvedScore;
     grade.totalPoints = classwork.points;
-    grade.percentage = classwork.points > 0 ? (score / classwork.points) * 100 : 0;
+    grade.percentage = classwork.points > 0 ? (resolvedScore / classwork.points) * 100 : 0;
     grade.feedback = typeof feedback === "string" ? feedback.trim() : "";
     grade.rubricScores = resolvedRubricScores;
     grade.gradedBy = req.user!._id;
@@ -742,6 +742,28 @@ export const saveClassworkGrade = async (req: AuthRequest, res: Response): Promi
   } catch (error) {
     console.error("Error saving classwork grade:", error);
     res.status(500).json({ message: "Error saving classwork grade" });
+  }
+};
+
+export const getMyGrades = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const studentId = req.user!._id;
+    const [grades, submissions] = await Promise.all([
+      ClassworkGrade.find({ student: studentId })
+        .populate("classwork", "title type points")
+        .populate("subject", "name")
+        .sort({ gradedAt: -1 })
+        .lean(),
+      ClassworkSubmission.find({ student: studentId, status: "graded" })
+        .populate("classwork", "title type points")
+        .populate("subject", "name")
+        .sort({ gradedAt: -1 })
+        .lean(),
+    ]);
+
+    res.status(200).json({ grades, submissions });
+  } catch {
+    res.status(500).json({ message: "Unable to fetch classwork grades." });
   }
 };
 

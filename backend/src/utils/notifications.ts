@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import Notification, { type NotificationType } from "../models/notification";
+import Notification, { type NotificationType } from "../models/notification.ts";
 
 interface NotificationInput {
   recipient: mongoose.Types.ObjectId | string;

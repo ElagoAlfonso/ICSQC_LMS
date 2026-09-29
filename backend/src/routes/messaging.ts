@@ -16,9 +16,9 @@ import {
   removeGroupMember,
   leaveGroup,
   downloadMessageAttachment,
-} from "../controllers/messaging";
-import { protect } from "../middleware/auth";
-import { parseGroupPhoto, parseSubjectAttachments } from "../middleware/upload";
+} from "../controllers/messaging.ts";
+import { protect } from "../middleware/auth.ts";
+import { parseGroupPhoto, parseSubjectAttachments } from "../middleware/upload.ts";
 
 const router = express.Router();
 

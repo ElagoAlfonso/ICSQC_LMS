@@ -1,12 +1,12 @@
 import { type Response } from "express";
 import mongoose, { type Schema, type Document } from "mongoose";
-import { type AuthRequest } from "../middleware/auth";
-import { logActivity } from "../utils/activitieslog";
-import Class from "../models/class";
-import ClassRequest from "../models/classRequest";
-import Subject from "../models/subject";
-import User from "../models/user";
-import { createNotification } from "../utils/notifications";
+import { type AuthRequest } from "../middleware/auth.ts";
+import { logActivity } from "../utils/activitieslog.ts";
+import Class from "../models/class.ts";
+import ClassRequest from "../models/classRequest.ts";
+import Subject from "../models/subject.ts";
+import User from "../models/user.ts";
+import { createNotification } from "../utils/notifications.ts";
 
 export const HIGH_SCHOOL_GRADE_LEVELS = ["Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12"];
 

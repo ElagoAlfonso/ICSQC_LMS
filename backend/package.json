@@ -8,7 +8,7 @@
   "private": true,
   "trustedDependencies": [],
   "scripts": {
-    "build": "tsc --noEmit",
+    "build": "tsc",
     "dev": "bun --watch src/server.ts",
     "start": "bun src/server.ts"
   },

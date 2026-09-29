@@ -1,7 +1,7 @@
 import { type Request, type Response, type NextFunction } from "express";
 import jwt from "jsonwebtoken";
 
-import User, { type IUser, type userRoles } from "../models/user";
+import User, { type IUser, type userRoles } from "../models/user.ts";
 
 export interface AuthRequest extends Request {
   user?: IUser;

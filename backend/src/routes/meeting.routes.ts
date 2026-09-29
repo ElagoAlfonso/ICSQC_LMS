@@ -1,7 +1,7 @@
 import express from "express";
-import { protect, authorize } from "../middleware/auth";
-import { requireGoogleConfiguration } from "../middleware/googleAuth";
-import { cancelMeeting, createClassMeet, createMeeting, deleteMeeting, endClassMeet, getAdminMeetings, getClassMeet, getClassMeetings, getMeetingById, getStudentMeetings, getTeacherMeetings, updateMeeting } from "../controllers/meeting.controller";
+import { protect, authorize } from "../middleware/auth.ts";
+import { requireGoogleConfiguration } from "../middleware/googleAuth.ts";
+import { cancelMeeting, createClassMeet, createMeeting, deleteMeeting, endClassMeet, getAdminMeetings, getClassMeet, getClassMeetings, getMeetingById, getStudentMeetings, getTeacherMeetings, updateMeeting } from "../controllers/meeting.controller.ts";
 const router = express.Router();
 router.post("/classes/:classId/meet", protect, authorize(["teacher", "admin"]), requireGoogleConfiguration, createClassMeet);
 router.get("/classes/:classId/meet", protect, authorize(["teacher", "student", "admin"]), getClassMeet);

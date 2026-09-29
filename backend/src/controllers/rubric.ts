@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { type Response } from "express";
-import { type AuthRequest } from "../middleware/auth";
-import Rubric from "../models/rubric";
+import { type AuthRequest } from "../middleware/auth.ts";
+import Rubric from "../models/rubric.ts";
 
 export const getRubrics = async (req: AuthRequest, res: Response): Promise<void> => {
   try {

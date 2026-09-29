@@ -1,9 +1,9 @@
 import type { Response } from "express";
-import Class from "../models/class";
-import Subject from "../models/subject";
-import type { AuthRequest } from "../middleware/auth";
-import { generateTutorReply, type AiContext } from "../services/ai.service";
-import { canUseAI } from "../services/aiAccess.service";
+import Class from "../models/class.ts";
+import Subject from "../models/subject.ts";
+import type { AuthRequest } from "../middleware/auth.ts";
+import { generateTutorReply, type AiContext } from "../services/ai.service.ts";
+import { canUseAI } from "../services/aiAccess.service.ts";
 
 const getAiContext = async (req: AuthRequest): Promise<AiContext> => {
   const user = req.user;

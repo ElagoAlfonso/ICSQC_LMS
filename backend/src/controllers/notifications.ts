@@ -1,6 +1,6 @@
 import { type Response } from "express";
-import { type AuthRequest } from "../middleware/auth";
-import Notification from "../models/notification";
+import { type AuthRequest } from "../middleware/auth.ts";
+import Notification from "../models/notification.ts";
 
 export const getNotifications = async (req: AuthRequest, res: Response): Promise<void> => {
   try {

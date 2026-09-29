@@ -1,6 +1,6 @@
 import express from "express";
-import { createRubric, getRubrics } from "../controllers/rubric";
-import { authorize, protect } from "../middleware/auth";
+import { createRubric, getRubrics } from "../controllers/rubric.ts";
+import { authorize, protect } from "../middleware/auth.ts";
 
 const router = express.Router();
 

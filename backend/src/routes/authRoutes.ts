@@ -1,6 +1,6 @@
 import express from "express";
-import { forgotPassword } from "../controllers/auth/forgotPassword";
-import { resetPassword, verifyResetToken } from "../controllers/auth/resetPassword";
+import { forgotPassword } from "../controllers/auth/forgotPassword.ts";
+import { resetPassword, verifyResetToken } from "../controllers/auth/resetPassword.ts";
 
 const router = express.Router();
 

@@ -1,15 +1,15 @@
 import { type Request, type Response } from "express";
-import User from "../models/user";
-import { generateToken } from "../utils/generateToken";
-import { logActivity } from "../utils/activitieslog";
-import type { AuthRequest } from "../middleware/auth";
-import { createNotifications } from "../utils/notifications";
+import User from "../models/user.ts";
+import { generateToken } from "../utils/generateToken.ts";
+import { logActivity } from "../utils/activitieslog.ts";
+import type { AuthRequest } from "../middleware/auth.ts";
+import { createNotifications } from "../utils/notifications.ts";
 import {
     isIcsqcEmail,
     isStrongPassword,
     normalizeEmail,
     passwordRequirementsMessage,
-} from "../utils/authValidation";
+} from "../utils/authValidation.ts";
 
 //  @desc    Register a new user
 //  @route   POST /api/users/register

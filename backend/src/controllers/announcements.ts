@@ -1,14 +1,14 @@
 import { type Response } from "express";
-import { type AuthRequest } from "../middleware/auth";
-import { logActivity } from "../utils/activitieslog";
-import { createNotification } from "../utils/notifications";
-import Comment from "../models/comment";
-import Reaction from "../models/reaction";
-import Announcement from "../models/announcement";
-import User from "../models/user";
-import Class from "../models/class";
-import Subject from "../models/subject";
-import { emitToAnnouncement } from "../realtime";
+import { type AuthRequest } from "../middleware/auth.ts";
+import { logActivity } from "../utils/activitieslog.ts";
+import { createNotification } from "../utils/notifications.ts";
+import Comment from "../models/comment.ts";
+import Reaction from "../models/reaction.ts";
+import Announcement from "../models/announcement.ts";
+import User from "../models/user.ts";
+import Class from "../models/class.ts";
+import Subject from "../models/subject.ts";
+import { emitToAnnouncement } from "../realtime.ts";
 
 const getGroupedReactions = async (announcementId: string) => {
   const reactions = await Reaction.find({ announcement: announcementId })

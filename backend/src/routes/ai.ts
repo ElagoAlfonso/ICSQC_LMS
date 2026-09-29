@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { chat, getAccess } from "../controllers/ai";
-import { protect } from "../middleware/auth";
+import { chat, getAccess } from "../controllers/ai.ts";
+import { protect } from "../middleware/auth.ts";
 
 const router = Router();
 

@@ -1,8 +1,8 @@
 import express from "express";
-import { protect, authorize, type AuthRequest } from "../middleware/auth";
-import { createGoogleOAuthState, requireGoogleConfiguration, verifyGoogleOAuthState } from "../middleware/googleAuth";
-import { createOAuthClient, getGoogleAuthUrl, saveGoogleTokens } from "../services/googleMeet.service";
-import GoogleToken from "../models/googleToken.model";
+import { protect, authorize, type AuthRequest } from "../middleware/auth.ts";
+import { createGoogleOAuthState, requireGoogleConfiguration, verifyGoogleOAuthState } from "../middleware/googleAuth.ts";
+import { createOAuthClient, getGoogleAuthUrl, saveGoogleTokens } from "../services/googleMeet.service.ts";
+import GoogleToken from "../models/googleToken.model.ts";
 
 const router = express.Router();
 router.get("/google/status", protect, authorize(["teacher", "admin"]), requireGoogleConfiguration, async (req: AuthRequest, res) => {
