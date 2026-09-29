@@ -1,48 +1,25 @@
 import React, { useEffect, useState } from 'react';
 import {
   Users, GraduationCap, BookOpen, ClipboardList,
-  TrendingUp, Activity, Award, Calendar,
+  Clock, Tag,
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts';
 import { StatCard, Card, Badge } from '../../components/ui';
 import { dashboardApi, logsApi, academicYearsApi } from '../../utils/api';
 import { format } from 'date-fns';
 import type { ActivityLog } from '../../types';
+import { ACTIVITY_AVATAR_COLORS, ACTIVITY_COLOR_MAP, cosmetifyDetails, formatLogAction, getActionColor, getLogUserInitial, getLogUserName } from '../../utils/activityLogs';
 
 const COLORS = ['#8B1A1A', '#C9A84C', '#1A2744', '#059669', '#2563EB'];
-
-const enrollmentData = [
-  { month: 'Aug', students: 420 },
-  { month: 'Sep', students: 445 },
-  { month: 'Oct', students: 461 },
-  { month: 'Nov', students: 455 },
-  { month: 'Dec', students: 430 },
-  { month: 'Jan', students: 470 },
-  { month: 'Feb', students: 482 },
-  { month: 'Mar', students: 490 },
-];
-
-const gradeDistribution = [
-  { grade: 'Grade 7', count: 85 },
-  { grade: 'Grade 8', count: 78 },
-  { grade: 'Grade 9', count: 72 },
-  { grade: 'Grade 10', count: 68 },
-  { grade: 'Grade 11', count: 95 },
-  { grade: 'Grade 12', count: 92 },
-];
-
-const performanceData = [
-  { name: 'Excellent\n(90-100)', value: 35 },
-  { name: 'Good\n(80-89)', value: 40 },
-  { name: 'Satisfactory\n(70-79)', value: 18 },
-  { name: 'Needs Work\n(<70)', value: 7 },
-];
 
 export default function AdminDashboard() {
   const [stats, setStats] = useState({
     totalStudents: 0, totalTeachers: 0,
     totalClasses: 0, totalSubjects: 0,
     activeExams: 0, pendingSubmissions: 0,
+    enrollmentTrend: [] as { month: string; students: number }[],
+    studentsByGrade: [] as { grade: string; count: number }[],
+    performanceDistribution: [] as { name: string; count: number; percentage: number }[],
   });
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [currentYear, setCurrentYear] = useState<string>('');
@@ -68,10 +45,14 @@ export default function AdminDashboard() {
     load();
   }, []);
 
+  const enrollmentData = stats.enrollmentTrend;
+  const gradeDistribution = stats.studentsByGrade;
+  const performanceData = stats.performanceDistribution;
+
   const statCards = [
-    { label: 'Total Students', value: stats.totalStudents, icon: <Users size={22} />, color: '#8B1A1A', bg: '#FEE2E2', change: '+12 this month', changeType: 'up' as const },
-    { label: 'Total Teachers', value: stats.totalTeachers, icon: <GraduationCap size={22} />, color: '#1A2744', bg: '#EFF6FF', change: '2 new this year', changeType: 'up' as const },
-    { label: 'Active Classes', value: stats.totalClasses, icon: <BookOpen size={22} />, color: '#059669', bg: '#D1FAE5', change: 'All sections active', changeType: 'neutral' as const },
+    { label: 'Total Students', value: stats.totalStudents, icon: <Users size={22} />, color: '#8B1A1A', bg: '#FEE2E2', change: 'Active student accounts', changeType: 'neutral' as const },
+    { label: 'Total Teachers', value: stats.totalTeachers, icon: <GraduationCap size={22} />, color: '#1A2744', bg: '#EFF6FF', change: 'Active teacher accounts', changeType: 'neutral' as const },
+    { label: 'Active Classes', value: stats.totalClasses, icon: <BookOpen size={22} />, color: '#059669', bg: '#D1FAE5', change: 'Current academic year', changeType: 'neutral' as const },
     { label: 'Active Exams', value: stats.activeExams, icon: <ClipboardList size={22} />, color: '#C9A84C', bg: '#FEF3C7', change: `${stats.pendingSubmissions} pending`, changeType: 'neutral' as const },
   ];
 
@@ -129,7 +110,7 @@ export default function AdminDashboard() {
 
       {/* Charts row */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-        <Card title="Student Enrollment Trend" subtitle="Monthly enrollment this academic year">
+        <Card title="Student Enrollment Trend" subtitle="Cumulative active student accounts this academic year">
           <ResponsiveContainer width="100%" height={220}>
             <LineChart data={enrollmentData} margin={{ top: 5, right: 5, bottom: 5, left: -20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
@@ -170,36 +151,28 @@ export default function AdminDashboard() {
               No recent activity
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              {logs.map((log, i) => (
-                <div key={log._id} style={{
-                  display: 'flex', alignItems: 'flex-start', gap: '12px',
-                  padding: '12px 0',
-                  borderBottom: i < logs.length - 1 ? '1px solid var(--gray-50)' : 'none',
-                }}>
-                  <div style={{
-                    width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
-                    background: '#FEE2E2',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  }}>
-                    <Activity size={14} color="#8B1A1A" />
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ fontSize: '0.8rem', fontWeight: 600, color: '#374151', marginBottom: '2px' }}>
-                      {log.action}
-                    </p>
-                    <p style={{
-                      fontSize: '0.75rem', color: '#9CA3AF',
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}>
-                      {log.details}
-                    </p>
-                  </div>
-                  <span style={{ fontSize: '0.7rem', color: '#9CA3AF', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                    {format(new Date(log.createdAt), 'MMM d, h:mm a')}
-                  </span>
+            <div style={{ overflowX: 'auto' }}>
+              <div style={{ minWidth: 620 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 1.15fr) minmax(130px, 1.3fr) minmax(180px, 2fr) minmax(115px, 1.1fr)', gap: 10, padding: '8px 0 10px', borderBottom: '2px solid #F3F4F6' }}>
+                  {['Action', 'User', 'Details', 'Timestamp'].map((heading) => <span key={heading} style={{ fontSize: '0.68rem', fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase' }}>{heading}</span>)}
                 </div>
-              ))}
+                {logs.map((log, index) => {
+                  const actionColors = ACTIVITY_COLOR_MAP[getActionColor(log.action)];
+                  const userName = getLogUserName(log);
+                  const avatarColor = ACTIVITY_AVATAR_COLORS[userName.charCodeAt(0) % ACTIVITY_AVATAR_COLORS.length];
+                  const hasTimestamp = log.createdAt && !Number.isNaN(new Date(log.createdAt).getTime());
+                  const details = cosmetifyDetails(log.details);
+                  return <div key={log._id} style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 1.15fr) minmax(130px, 1.3fr) minmax(180px, 2fr) minmax(115px, 1.1fr)', gap: 10, padding: '10px 0', borderBottom: index < logs.length - 1 ? '1px solid #F3F4F6' : 'none', alignItems: 'center' }}>
+                    <span title={formatLogAction(log.action)} style={{ padding: '3px 8px', background: actionColors.bg, color: actionColors.text, borderRadius: 20, fontSize: '0.68rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4, width: 'fit-content', maxWidth: '100%' }}><Tag size={10} />{formatLogAction(log.action)}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+                      <div style={{ width: 27, height: 27, borderRadius: '50%', background: `${avatarColor}22`, border: `2px solid ${avatarColor}44`, display: 'grid', placeItems: 'center', fontSize: '0.68rem', fontWeight: 700, color: avatarColor, flexShrink: 0 }}>{getLogUserInitial(log)}</div>
+                      <div style={{ minWidth: 0 }}><p style={{ margin: 0, fontSize: '0.76rem', fontWeight: 600, color: '#111', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{userName}</p>{typeof log.user === 'object' && log.user?.role && <p style={{ margin: 0, fontSize: '0.66rem', color: '#9CA3AF', textTransform: 'capitalize' }}>{log.user.role}</p>}</div>
+                    </div>
+                    <span title={details} style={{ fontSize: '0.76rem', color: '#6B7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{details}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: '#9CA3AF' }}><Clock size={12} /><div><p style={{ margin: 0, fontSize: '0.72rem', color: '#4B5563', fontWeight: 500 }}>{hasTimestamp ? format(new Date(log.createdAt), 'MMM d, yyyy') : '—'}</p><p style={{ margin: 0, fontSize: '0.66rem' }}>{hasTimestamp ? format(new Date(log.createdAt), 'h:mm:ss a') : ''}</p></div></div>
+                  </div>;
+                })}
+              </div>
             </div>
           )}
         </Card>
@@ -213,7 +186,7 @@ export default function AdminDashboard() {
                 cx={100} cy={90}
                 innerRadius={55} outerRadius={85}
                 paddingAngle={3}
-                dataKey="value"
+                dataKey="count"
               >
                 {performanceData.map((_, i) => (
                   <Cell key={i} fill={COLORS[i % COLORS.length]} />
@@ -221,7 +194,7 @@ export default function AdminDashboard() {
               </Pie>
               <Tooltip
                 contentStyle={{ borderRadius: '8px', border: '1px solid #E5E7EB', fontSize: '0.78rem' }}
-                formatter={(v: any) => [`${v}%`, 'Students']}
+                formatter={(v: any) => [v, 'Graded submissions']}
               />
             </PieChart>
           </div>
@@ -236,7 +209,7 @@ export default function AdminDashboard() {
                   {item.name.split('\n')[0]}
                 </span>
                 <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#374151' }}>
-                  {item.value}%
+                  {item.percentage}%
                 </span>
               </div>
             ))}

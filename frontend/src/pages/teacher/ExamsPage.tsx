@@ -1,11 +1,15 @@
-import React, { useEffect, useState } from 'react';
-import { Plus, Search, Edit2, Trash2, ClipboardList, Eye, Send, Lock } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Plus, Search, Edit2, Trash2, ClipboardList, Eye, Send, Lock, ArrowLeft, ArrowRight, Users } from 'lucide-react';
 import { Card, Button, Badge, DataTable, Pagination, Modal, Input, Select, EmptyState } from '../../components/ui';
-import { examsApi, subjectsApi, classesApi, academicYearsApi } from '../../utils/api';
-import type { Exam, Subject, Class, AcademicYear, Pagination as PaginationType } from '../../types';
+import { examsApi, subjectsApi, classesApi, academicYearsApi, submissionsApi } from '../../utils/api';
+import type { Exam, Subject, Class, AcademicYear, Pagination as PaginationType, Question } from '../../types';
 import { useAuthStore } from '../../store/authStore';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
+import QuestionBuilder from '../../components/QuestionBuilder';
+import { getExamValidationErrors, hasExamValidationErrors } from '../../utils/examValidation';
+import { useNavigate } from 'react-router-dom';
+import { io } from 'socket.io-client';
 
 const EXAM_TYPES = [
   { value: 'quiz', label: 'Quiz' },
@@ -13,17 +17,45 @@ const EXAM_TYPES = [
   { value: 'midterm', label: 'Midterm' },
   { value: 'finals', label: 'Finals' },
   { value: 'assignment', label: 'Assignment' },
+  { value: 'formative', label: 'Formative Assessment' },
 ];
 
 const INITIAL_FORM = {
   title: '', description: '', subject: '', class: '', academicYear: '',
   examType: 'quiz', duration: '60', passingScore: '75',
-  startDate: '', endDate: '', status: 'draft',
+  startDate: '', startTime: '08:00', endDate: '', endTime: '17:00', status: 'draft', randomizeQuestions: false,
 };
+
+const toDateInputValue = (value?: string | Date | null) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const formatSafeDate = (value?: string | Date | null, pattern = 'MMM d') => {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return format(date, pattern);
+};
+
+const toTimeInputValue = (value?: string | Date | null, fallback = '') => {
+  if (!value) return fallback;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? fallback : date.toTimeString().slice(0, 5);
+};
+
+const toLocalDateTime = (date: string, time: string) => new Date(`${date}T${time}`).toISOString();
 
 export default function ExamsPage() {
   const { user } = useAuthStore();
+  const navigate = useNavigate();
   const [exams, setExams] = useState<Exam[]>([]);
+  const [submissionCounts, setSubmissionCounts] = useState<Record<string, number>>({});
   const [pagination, setPagination] = useState<PaginationType>({ total: 0, page: 1, pages: 1, limit: 10 });
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -34,9 +66,17 @@ export default function ExamsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editItem, setEditItem] = useState<Exam | null>(null);
   const [form, setForm] = useState(INITIAL_FORM);
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [qTab, setQTab] = useState<'info' | 'questions' | 'settings' | 'preview'>('info');
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Exam | null>(null);
   const [statusFilter, setStatusFilter] = useState('');
+
+  const validationErrors = useMemo(() => {
+    const step = qTab === 'info' ? 'overview' : qTab === 'questions' ? 'questions' : qTab === 'settings' ? 'settings' : 'publish';
+    return getExamValidationErrors({ form, questions, stage: step });
+  }, [form, questions, qTab]);
+  const hasValidation = hasExamValidationErrors(validationErrors);
 
   useEffect(() => {
     const loadMeta = async () => {
@@ -45,8 +85,31 @@ export default function ExamsPage() {
         classesApi.getAll({ limit: 100 }),
         academicYearsApi.getAll(),
       ]);
-      if (subjRes.status === 'fulfilled') setSubjects(subjRes.value.data.subjects || []);
-      if (classRes.status === 'fulfilled') setClasses(classRes.value.data.classes || []);
+      const loadedSubjects = subjRes.status === 'fulfilled' ? (subjRes.value.data.subjects || []) : [];
+      setSubjects(loadedSubjects);
+
+      if (classRes.status === 'fulfilled') {
+        const allClasses = classRes.value.data.classes || [];
+        const teacherSubjectIds = loadedSubjects
+          .filter((subject: Subject) => {
+            const teacherId = typeof subject.teacher === 'object' ? (subject.teacher as any)?._id : subject.teacher;
+            return teacherId === user?._id;
+          })
+          .map((subject: Subject) => subject._id);
+
+        const teacherClasses = allClasses.filter((cls: Class) => {
+          const adviserId = typeof cls.adviser === 'object' ? (cls.adviser as any)?._id : cls.adviser;
+          if (adviserId === user?._id) return true;
+
+          const classSubjectIds = (((cls as any)?.subjects || []) as Array<Subject | string>).map((subject: Subject | string) =>
+            typeof subject === 'object' ? (subject as Subject)._id : subject
+          );
+
+          return classSubjectIds.some((subjectId) => teacherSubjectIds.includes(subjectId));
+        });
+
+        setClasses(teacherClasses);
+      }
       if (ayRes.status === 'fulfilled') {
         setAcademicYears(ayRes.value.data);
         const current = ayRes.value.data.find((ay: AcademicYear) => ay.isCurrent);
@@ -54,26 +117,87 @@ export default function ExamsPage() {
       }
     };
     loadMeta();
-  }, []);
+  }, [user?._id]);
 
   const fetchExams = async () => {
     setLoading(true);
-    try {
-      const res = await examsApi.getAll({ page, limit: 10, search, status: statusFilter });
+    const [examResult, submissionResult] = await Promise.allSettled([
+      examsApi.getAll({ page, limit: 10, search, status: statusFilter }),
+      submissionsApi.getAll(),
+    ]);
+    if (examResult.status === 'fulfilled') {
+      const res = examResult.value;
       setExams(res.data.exams || []);
       if (res.data.pagination) setPagination(res.data.pagination);
-    } catch { toast.error('Failed to load exams'); }
+    } else {
+      toast.error('Failed to load exams');
+    }
+    if (submissionResult.status === 'fulfilled') {
+      const counts: Record<string, number> = {};
+      for (const submission of submissionResult.value.data.submissions || []) {
+        const examId = typeof submission.exam === 'object' ? submission.exam?._id : submission.exam;
+        if (examId) counts[examId] = (counts[examId] || 0) + 1;
+      }
+      setSubmissionCounts(counts);
+    }
     setLoading(false);
   };
 
   useEffect(() => { fetchExams(); }, [page, search, statusFilter]);
+  useEffect(() => {
+    const socket = io(import.meta.env.VITE_REALTIME_URL || window.location.origin, { withCredentials: true, transports: ['websocket', 'polling'] });
+    const refresh = () => { void fetchExams(); };
+    socket.on('academic:update', refresh);
+    return () => { socket.off('academic:update', refresh); socket.disconnect(); };
+  }, [page, search, statusFilter]);
 
-  const subjectOptions = [{ value: '', label: 'Select Subject' }, ...subjects.map(s => ({ value: s._id, label: `${s.name} (${s.code})` }))];
-  const classOptions = [{ value: '', label: 'Select Class' }, ...classes.map(c => ({ value: c._id, label: `${c.name} - ${c.section}` }))];
+  const selectedClass = classes.find((c) => c._id === form.class) as Class | undefined;
+  const selectedClassSubjects = ((selectedClass as any)?.subjects || []) as Array<Subject | string>;
+  const classSubjectIds = selectedClassSubjects.map((subject: Subject | string) => typeof subject === 'object' ? subject._id : subject);
+  const teacherSubjectIds = subjects
+    .filter((subject) => {
+      const teacherId = typeof subject.teacher === 'object' ? (subject.teacher as any)?._id : subject.teacher;
+      return teacherId === user?._id;
+    })
+    .map((subject) => subject._id);
+  const allowedSubjectIds = classSubjectIds.length ? classSubjectIds : teacherSubjectIds;
+  const availableSubjects = subjects.filter((subject) => {
+    if (!form.class) return false;
+    return allowedSubjectIds.includes(subject._id);
+  });
+  const getClassDisplay = (cls?: Partial<Class> | null) => cls?.section || cls?.name || 'Class';
+  const subjectOptions = [
+    {
+      value: '',
+      label: !form.class
+        ? 'Select a class first'
+        : availableSubjects.length
+          ? 'Select Subject'
+          : teacherSubjectIds.length
+            ? 'No subjects assigned to this class. Choose one of your assigned subjects.'
+            : 'No subjects assigned to this class or your account.',
+    },
+    ...availableSubjects.map((subject) => ({ value: subject._id, label: `${subject.name} (${subject.code})` })),
+  ];
+  const classOptions = [{ value: '', label: 'Select Class / Section' }, ...classes.map(c => ({ value: c._id, label: `${getClassDisplay(c)}${c.gradeLevel ? ` (${c.gradeLevel})` : ''}` }))];
   const ayOptions = [{ value: '', label: 'Select Year' }, ...academicYears.map(ay => ({ value: ay._id, label: ay.name }))];
   const statusOptions = [{ value: '', label: 'All Status' }, { value: 'draft', label: 'Draft' }, { value: 'published', label: 'Published' }, { value: 'closed', label: 'Closed' }];
 
-  const openCreate = () => { setEditItem(null); setForm(INITIAL_FORM); setModalOpen(true); };
+  const handleClassChange = (nextClassId: string) => {
+    const nextClass = classes.find((c) => c._id === nextClassId) as Class | undefined;
+    const nextClassSubjects = ((nextClass as any)?.subjects || []) as Array<Subject | string>;
+    const classLinkedSubject = nextClassSubjects.length
+      ? (typeof nextClassSubjects[0] === 'object' ? (nextClassSubjects[0] as Subject)._id : nextClassSubjects[0])
+      : '';
+    const fallbackTeacherSubject = teacherSubjectIds[0] || '';
+    setForm((prev) => ({
+      ...prev,
+      class: nextClassId,
+      subject: classLinkedSubject || fallbackTeacherSubject || prev.subject,
+    }));
+  };
+
+  const openCreate = () => { setEditItem(null); setForm(INITIAL_FORM); setQuestions([]); setQTab('info'); setModalOpen(true); };
 
   const openEdit = (exam: Exam) => {
     setEditItem(exam);
@@ -82,23 +206,45 @@ export default function ExamsPage() {
       subject: typeof exam.subject === 'object' ? (exam.subject as Subject)._id : exam.subject,
       class: typeof exam.class === 'object' ? (exam.class as Class)._id : exam.class,
       academicYear: typeof exam.academicYear === 'object' ? (exam.academicYear as AcademicYear)._id : exam.academicYear,
-      examType: exam.examType, duration: String(exam.duration),
-      passingScore: String(exam.passingScore),
-      startDate: exam.startDate.split('T')[0],
-      endDate: exam.endDate.split('T')[0],
+      examType: exam.examType, duration: String(exam.duration ?? 60),
+      passingScore: String(exam.passingScore ?? 75),
+      startDate: toDateInputValue(exam.startDate),
+      startTime: toTimeInputValue(exam.startDate, '08:00'),
+      endDate: toDateInputValue(exam.endDate),
+      endTime: toTimeInputValue(exam.endDate, '17:00'),
       status: exam.status,
+      randomizeQuestions: Boolean(exam.randomizeQuestions),
     });
+    setQuestions(exam.questions || []);
+    setQTab('info');
     setModalOpen(true);
   };
 
+  const validateExamInfo = (stage: 'overview' | 'questions' | 'settings' | 'publish' = 'overview') => {
+    const nextErrors = getExamValidationErrors({ form, questions, stage });
+    if (hasExamValidationErrors(nextErrors)) {
+      const missingList = Object.values(nextErrors).slice(0, 3).join(' ');
+      toast.error(missingList || 'Required exam information.');
+      return false;
+    }
+
+    if (stage === 'settings' || stage === 'publish') {
+      if (form.startDate && form.startTime && form.endDate && form.endTime && new Date(`${form.endDate}T${form.endTime}`) < new Date(`${form.startDate}T${form.startTime}`)) {
+        toast.error('End date must be on or after the start date.');
+        return false;
+      }
+    }
+    return true;
+  };
+
   const handleSave = async () => {
-    if (!form.title || !form.subject || !form.class || !form.startDate || !form.endDate) {
-      toast.error('Please fill all required fields');
+    if (!validateExamInfo('publish')) {
+      setQTab('settings');
       return;
     }
     setSaving(true);
     try {
-      const payload = { ...form, duration: parseInt(form.duration), passingScore: parseInt(form.passingScore), createdBy: user?._id };
+      const payload = { ...form, startDate: toLocalDateTime(form.startDate, form.startTime), endDate: toLocalDateTime(form.endDate, form.endTime), duration: parseInt(form.duration), passingScore: parseInt(form.passingScore), questions, createdBy: user?._id };
       if (editItem) {
         await examsApi.update(editItem._id, payload);
         toast.success('Exam updated');
@@ -110,16 +256,42 @@ export default function ExamsPage() {
       fetchExams();
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Operation failed');
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   };
+
+  const continueToQuestions = () => {
+    if (validateExamInfo('overview')) setQTab('questions');
+  };
+
+  const continueToSettings = () => {
+    if (!validateExamInfo('questions')) {
+      setQTab('questions');
+      return;
+    }
+    setQTab('settings');
+  };
+
+  const continueToPreview = () => {
+    if (validateExamInfo('settings')) setQTab('preview');
+  };
+
+  const wizardSteps = [
+    { key: 'info', label: 'Overview' },
+    { key: 'questions', label: 'Questions' },
+    { key: 'settings', label: 'Schedule' },
+    { key: 'preview', label: 'Review' },
+  ] as const;
 
   const handlePublish = async (id: string) => {
     try {
       await examsApi.publish(id);
       toast.success('Exam published');
       fetchExams();
-    } catch { toast.error('Failed to publish exam'); }
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Failed to publish exam');
+    }
   };
 
   const handleClose = async (id: string) => {
@@ -137,7 +309,9 @@ export default function ExamsPage() {
       toast.success('Exam deleted');
       setDeleteTarget(null);
       fetchExams();
-    } catch { toast.error('Delete failed'); }
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Delete failed');
+    }
   };
 
   const columns = [
@@ -169,10 +343,17 @@ export default function ExamsPage() {
       )
     },
     {
+      key: 'gradeLevel', label: 'Year Level', render: (e: Exam) => (
+        <span style={{ fontSize: '0.8rem', color: 'var(--gray-600)' }}>
+          {typeof e.class === 'object' ? (e.class as Class).gradeLevel : '—'}
+        </span>
+      )
+    },
+    {
       key: 'dates', label: 'Schedule', render: (e: Exam) => (
         <div>
-          <div style={{ fontSize: '0.78rem', color: 'var(--gray-600)' }}>{format(new Date(e.startDate), 'MMM d')}</div>
-          <div style={{ fontSize: '0.72rem', color: 'var(--gray-400)' }}>→ {format(new Date(e.endDate), 'MMM d, yyyy')}</div>
+          <div style={{ fontSize: '0.78rem', color: 'var(--gray-600)' }}>{formatSafeDate(e.startDate, 'MMM d')}</div>
+          <div style={{ fontSize: '0.72rem', color: 'var(--gray-400)' }}>→ {formatSafeDate(e.endDate, 'MMM d, yyyy')}</div>
         </div>
       )
     },
@@ -180,6 +361,20 @@ export default function ExamsPage() {
       key: 'status', label: 'Status', render: (e: Exam) => (
         <Badge label={e.status} color={e.status === 'published' ? 'green' : e.status === 'draft' ? 'yellow' : 'gray'} />
       )
+    },
+    {
+      key: 'submissions', label: 'Answered', render: (e: Exam) => {
+        const count = submissionCounts[e._id] || 0;
+        return count > 0 ? (
+          <button
+            onClick={(event) => { event.stopPropagation(); navigate(`/teacher/submissions?exam=${encodeURIComponent(e._id)}`); }}
+            title="View students who answered"
+            style={{ padding: '5px 9px', background: '#EFF6FF', border: 'none', borderRadius: '6px', color: '#2563EB', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px', fontFamily: 'var(--font-body)' }}
+          >
+            <Users size={12} /> {count}
+          </button>
+        ) : <span style={{ fontSize: '0.78rem', color: 'var(--gray-400)' }}>0</span>;
+      }
     },
     {
       key: 'actions', label: '', render: (e: Exam) => (
@@ -235,33 +430,112 @@ export default function ExamsPage() {
       </Card>
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editItem ? 'Edit Exam' : 'Create Exam'} width="600px"
-        footer={<><Button variant="secondary" onClick={() => setModalOpen(false)}>Cancel</Button><Button loading={saving} onClick={handleSave}>{editItem ? 'Save' : 'Create'}</Button></>}
+        footer={qTab === 'info'
+          ? <><Button variant="secondary" onClick={() => setModalOpen(false)}>Cancel</Button><Button onClick={continueToQuestions} icon={<ArrowRight size={14} />}>Continue to questions</Button></>
+          : qTab === 'questions'
+            ? <><Button variant="secondary" onClick={() => setQTab('info')} icon={<ArrowLeft size={14} />}>Back</Button><Button onClick={continueToSettings}>Continue to settings</Button></>
+            : qTab === 'settings'
+              ? <><Button variant="secondary" onClick={() => setQTab('questions')} icon={<ArrowLeft size={14} />}>Back</Button><Button onClick={continueToPreview}>Preview exam</Button></>
+              : <><Button variant="secondary" onClick={() => setQTab('settings')} icon={<ArrowLeft size={14} />}>Back</Button><Button loading={saving} onClick={handleSave}>{editItem ? 'Save changes' : 'Publish draft'}</Button></>}
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <Input label="Exam Title *" placeholder="e.g. Q1 Science Quiz" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
-          <Input label="Description" placeholder="Optional description" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            <Select label="Subject *" value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} options={subjectOptions} />
-            <Select label="Class *" value={form.class} onChange={(e) => setForm({ ...form, class: e.target.value })} options={classOptions} />
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            <Select label="Exam Type *" value={form.examType} onChange={(e) => setForm({ ...form, examType: e.target.value })} options={EXAM_TYPES} />
-            <Select label="Academic Year *" value={form.academicYear} onChange={(e) => setForm({ ...form, academicYear: e.target.value })} options={ayOptions} />
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            <Input label="Duration (minutes)" type="number" value={form.duration} onChange={(e) => setForm({ ...form, duration: e.target.value })} />
-            <Input label="Passing Score (%)" type="number" min="0" max="100" value={form.passingScore} onChange={(e) => setForm({ ...form, passingScore: e.target.value })} />
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            <Input label="Start Date *" type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} />
-            <Input label="End Date *" type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} />
-          </div>
-          <div style={{ padding: '12px', background: '#FEF3C7', borderRadius: '10px', border: '1px solid #FDE68A' }}>
-            <p style={{ fontSize: '0.78rem', color: '#92400E', margin: 0 }}>
-              💡 After creating the exam, you can add questions from the exam detail view. Use the AI Assistant to help generate questions!
-            </p>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--gray-200)', marginBottom: 18, paddingBottom: 10 }}>
+          <div style={{ display: 'flex', borderBottom: '1px solid var(--gray-200)', flex: 1, alignItems: 'center' }}>
+            {wizardSteps.map((step) => (
+              <div
+                key={step.key}
+                style={{
+                  flex: 1,
+                  padding: '10px 12px',
+                  borderBottom: `2px solid ${qTab === step.key ? '#8B1A1A' : 'transparent'}`,
+                  color: qTab === step.key ? '#8B1A1A' : '#64748B',
+                  fontWeight: 700,
+                  fontSize: '0.8rem',
+                  textAlign: 'center',
+                }}
+              >
+                {step.label}
+              </div>
+            ))}
           </div>
         </div>
+        {qTab === 'info' && <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div style={{ background: '#F8FAFC', border: '1px solid var(--gray-200)', borderRadius: '12px', padding: '14px 16px' }}>
+            <Input label="Exam Title *" placeholder="e.g. Q1 Science Quiz" value={form.title} error={validationErrors.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+          </div>
+          <div style={{ background: '#F8FAFC', border: '1px solid var(--gray-200)', borderRadius: '12px', padding: '14px 16px' }}>
+            <Input label="Description" placeholder="Optional description or instructions" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+            <div style={{ background: '#F8FAFC', border: '1px solid var(--gray-200)', borderRadius: '12px', padding: '14px 16px' }}>
+              <Select label="Class / Section *" value={form.class} error={validationErrors.class} onChange={(e) => handleClassChange(e.target.value)} options={classOptions} />
+            </div>
+            <div style={{ background: '#F8FAFC', border: '1px solid var(--gray-200)', borderRadius: '12px', padding: '14px 16px' }}>
+              <Select label="Subject *" value={form.subject} error={validationErrors.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} options={subjectOptions} disabled={!form.class || !subjectOptions.some((s) => s.value && s.value !== '')} />
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+            <div style={{ background: '#F8FAFC', border: '1px solid var(--gray-200)', borderRadius: '12px', padding: '14px 16px' }}>
+              <Select label="Exam Type" value={form.examType} onChange={(e) => setForm({ ...form, examType: e.target.value })} options={EXAM_TYPES} />
+            </div>
+            <div style={{ background: '#F8FAFC', border: '1px solid var(--gray-200)', borderRadius: '12px', padding: '14px 16px' }}>
+              <Select label="Academic Year *" value={form.academicYear} error={validationErrors.academicYear} onChange={(e) => setForm({ ...form, academicYear: e.target.value })} options={ayOptions} />
+            </div>
+          </div>
+        </div>}
+        {qTab === 'questions' && <div style={{ maxHeight: 500, overflowY: 'auto' }}>
+          {validationErrors.questions && <div style={{ marginBottom: 12, background: '#FEF2F2', color: '#B91C1C', border: '1px solid #FECACA', borderRadius: 8, padding: '8px 10px', fontSize: '0.75rem' }}>{validationErrors.questions}</div>}
+          <QuestionBuilder questions={questions} validationErrors={validationErrors} onChange={setQuestions} readOnly={editItem?.status !== 'draft' && !!editItem} />
+        </div>}
+        {qTab === 'settings' && <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <Input label="Duration (minutes) *" type="number" value={form.duration} error={validationErrors.duration} onChange={(e) => setForm({ ...form, duration: e.target.value })} />
+            <Input label="Passing Score (%) *" type="number" min="0" max="100" value={form.passingScore} error={validationErrors.passingScore} onChange={(e) => setForm({ ...form, passingScore: e.target.value })} />
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 10, background: '#F8FAFC', border: '1px solid var(--gray-200)', color: 'var(--gray-700)', fontSize: '0.85rem', fontWeight: 600 }}>
+            <input type="checkbox" checked={form.randomizeQuestions} onChange={(e) => setForm({ ...form, randomizeQuestions: e.target.checked })} />
+            Randomize Questions
+          </label>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <Input label="Start Date *" type="date" value={form.startDate} error={validationErrors.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} />
+            <Input label="Start Time *" type="time" value={form.startTime} error={validationErrors.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} />
+            <Input label="End Date *" type="date" value={form.endDate} error={validationErrors.endDate || validationErrors.dateRange} onChange={(e) => setForm({ ...form, endDate: e.target.value })} />
+            <Input label="End Time *" type="time" value={form.endTime} error={validationErrors.endTime || validationErrors.dateRange} onChange={(e) => setForm({ ...form, endTime: e.target.value })} />
+          </div>
+          <div style={{ padding: '12px 14px', borderRadius: 10, background: '#F8FAFC', border: '1px solid var(--gray-200)' }}>
+            <p style={{ margin: 0, fontSize: '0.8rem', fontWeight: 600, color: 'var(--gray-700)' }}>Exam rules</p>
+            <ul style={{ margin: '8px 0 0 18px', padding: 0, color: 'var(--gray-600)', fontSize: '0.76rem', lineHeight: 1.8 }}>
+              <li>Students can only access the exam after the scheduled availability.</li>
+              <li>Time limit and passing score remain enforced in the LMS.</li>
+              <li>Draft exams remain editable until the teacher publishes them.</li>
+            </ul>
+          </div>
+        </div>}
+        {qTab === 'preview' && <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+          <div style={{ background: '#F8FAFC', border: '1px solid var(--gray-200)', borderRadius: 12, padding: '14px 16px' }}>
+            <p style={{ margin: 0, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8B1A1A', fontWeight: 700 }}>Preview</p>
+            <h3 style={{ margin: '8px 0 6px', fontSize: '1.25rem', fontWeight: 700 }}>{form.title || 'Untitled exam'}</h3>
+            <p style={{ margin: 0, color: 'var(--gray-600)', fontSize: '0.8rem' }}>{form.description || 'No instructions provided.'}</p>
+          </div>
+          <div style={{ display: 'grid', gap: 12 }}>
+            {questions.length === 0 ? <EmptyState title="No questions yet" description="Add at least one question before previewing." /> : questions.map((question, index) => (
+              <div key={`${index}-${question.question}`} style={{ border: '1px solid var(--gray-200)', borderRadius: 10, background: '#fff', padding: '14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                  <strong style={{ fontSize: '0.8rem', color: 'var(--gray-700)' }}>Question {index + 1}</strong>
+                  <Badge label={`${question.points} pts`} color="blue" />
+                </div>
+                <p style={{ margin: '0 0 10px', fontSize: '0.9rem', lineHeight: 1.5 }}>{question.question || 'Untitled question'}</p>
+                {question.type === 'multiple_choice' && <div style={{ display: 'grid', gap: 8 }}>
+                  {(question.choices || []).map((choice, choiceIndex) => (
+                    <div key={choiceIndex} style={{ padding: '8px 10px', border: '1px solid var(--gray-200)', borderRadius: 8, background: '#FAFAFA', fontSize: '0.8rem' }}>{String.fromCharCode(65 + choiceIndex)}. {choice || 'Empty option'}</div>
+                  ))}
+                </div>}
+                {question.type === 'true_false' && <div style={{ display: 'flex', gap: 8 }}><div style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1px solid var(--gray-200)' }}>True</div><div style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1px solid var(--gray-200)' }}>False</div></div>}
+                {question.type === 'short_answer' && <div style={{ padding: '10px 12px', border: '1px solid var(--gray-200)', borderRadius: 8, background: '#FAFAFA', color: 'var(--gray-400)' }}>Short answer response</div>}
+                {question.type === 'essay' && <div style={{ padding: '12px', border: '1px solid var(--gray-200)', borderRadius: 8, background: '#FAFAFA', color: 'var(--gray-400)' }}>Essay response</div>}
+              </div>
+            ))}
+          </div>
+        </div>}
       </Modal>
 
       <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Confirm Delete" width="400px"

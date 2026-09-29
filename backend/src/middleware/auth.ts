@@ -1,11 +1,7 @@
 import { type Request, type Response, type NextFunction } from "express";
 import jwt from "jsonwebtoken";
 
-<<<<<<< HEAD
 import User, { type IUser, type userRoles } from "../models/user";
-=======
-import User, { type IUser, type userRoles } from "../models/user.ts";
->>>>>>> a77495f626dbe90aaff470650f7e47812e2b1d22
 
 export interface AuthRequest extends Request {
   user?: IUser;
@@ -27,16 +23,21 @@ export const protect = async (
   if (token) {
     try {
       const decoded: any = jwt.verify(token, process.env.JWT_SECRET as string);
-      req.user = (await User.findById(decoded.userId).select(
+      const user = (await User.findById(decoded.userId).select(
         "-password"
-      )) as IUser;
-      next();
-    } catch (error) {
-      console.log(error);
-      res.status(401).json({ message: "Not authorized, token failed" });
+      )) as IUser | null;
+
+      if (!user || !user.isActive) {
+        return res.status(401).json({ message: "Not authorized, user not found" });
+      }
+
+      req.user = user;
+      return next();
+    } catch {
+      return res.status(401).json({ message: "Not authorized, token failed" });
     }
   } else {
-    res.status(401).json({ message: "Not authorized, no token" });
+    return res.status(401).json({ message: "Not authorized, no token" });
   }
 };
 

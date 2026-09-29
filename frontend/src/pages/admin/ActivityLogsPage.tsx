@@ -1,29 +1,10 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Activity, Search, User, Clock, Tag } from 'lucide-react';
+import { Activity, Search, Clock, Tag } from 'lucide-react';
 import { Card, Pagination, Badge } from '../../components/ui';
 import { logsApi } from '../../utils/api';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
-
-const ACTION_COLORS: Record<string, 'red' | 'green' | 'blue' | 'yellow' | 'gray'> = {
-  CREATE: 'green', UPDATE: 'blue', DELETE: 'red',
-  LOGIN: 'gray', REGISTER: 'green', LOGOUT: 'gray',
-};
-
-function getActionColor(action: string): 'red' | 'green' | 'blue' | 'yellow' | 'gray' {
-  for (const [key, val] of Object.entries(ACTION_COLORS)) {
-    if (action.toUpperCase().includes(key)) return val;
-  }
-  return 'gray';
-}
-
-const COLOR_MAP: Record<string, { bg: string; text: string }> = {
-  green:  { bg: '#D1FAE5', text: '#059669' },
-  blue:   { bg: '#DBEAFE', text: '#2563EB' },
-  red:    { bg: '#FEE2E2', text: '#DC2626' },
-  yellow: { bg: '#FEF3C7', text: '#D97706' },
-  gray:   { bg: '#F3F4F6', text: '#6B7280' },
-};
+import { ACTIVITY_AVATAR_COLORS, ACTIVITY_COLOR_MAP, cosmetifyDetails, formatLogAction, getActionColor, getLogUserInitial, getLogUserName } from '../../utils/activityLogs';
 
 export default function ActivityLogsPage() {
   const [logs, setLogs]         = useState<any[]>([]);
@@ -62,15 +43,6 @@ export default function ActivityLogsPage() {
 
   // Debounce search
   useEffect(() => { setPage(1); }, [search]);
-
-  const getUserName = (log: any) => {
-    if (!log.user) return 'System';
-    if (typeof log.user === 'object') return log.user.name || log.user.email || 'Unknown';
-    return String(log.user);
-  };
-  const getUserInitial = (log: any) => getUserName(log).charAt(0).toUpperCase();
-
-  const AVATAR_COLORS = ['#7a1010','#2563EB','#059669','#7C3AED','#D97706'];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -138,9 +110,9 @@ export default function ActivityLogsPage() {
             {/* Rows */}
             {logs.map((log, i) => {
               const color  = getActionColor(log.action);
-              const colors = COLOR_MAP[color];
-              const name   = getUserName(log);
-              const avatarColor = AVATAR_COLORS[name.charCodeAt(0) % AVATAR_COLORS.length];
+              const colors = ACTIVITY_COLOR_MAP[color];
+              const name   = getLogUserName(log);
+              const avatarColor = ACTIVITY_AVATAR_COLORS[name.charCodeAt(0) % ACTIVITY_AVATAR_COLORS.length];
               const hasTs  = log.createdAt && !isNaN(new Date(log.createdAt).getTime());
               return (
                 <div key={log._id || i}
@@ -149,13 +121,13 @@ export default function ActivityLogsPage() {
                   onMouseLeave={e => (e.currentTarget as HTMLElement).style.background='transparent'}>
                   {/* Action */}
                   <span style={{ padding: '3px 10px', background: colors.bg, color: colors.text, borderRadius: 20, fontSize: '0.72rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4, width: 'fit-content' }}>
-                    <Tag size={10}/>{log.action}
+                    <Tag size={10}/>{formatLogAction(log.action)}
                   </span>
 
                   {/* User */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <div style={{ width: 28, height: 28, borderRadius: '50%', background: avatarColor + '22', border: `2px solid ${avatarColor}44`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', fontWeight: 700, color: avatarColor, flexShrink: 0 }}>
-                      {getUserInitial(log)}
+                      {getLogUserInitial(log)}
                     </div>
                     <div style={{ minWidth: 0 }}>
                       <p style={{ fontSize: '0.8rem', fontWeight: 600, color: '#111', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</p>
@@ -166,8 +138,8 @@ export default function ActivityLogsPage() {
                   </div>
 
                   {/* Details */}
-                  <span style={{ fontSize: '0.8rem', color: '#6B7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }} title={log.details}>
-                    {log.details || <span style={{ color: '#D1D5DB', fontStyle: 'italic' }}>No details</span>}
+                  <span style={{ fontSize: '0.8rem', color: '#6B7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }} title={cosmetifyDetails(log.details)}>
+                    {cosmetifyDetails(log.details) || <span style={{ color: '#D1D5DB', fontStyle: 'italic' }}>No details</span>}
                   </span>
 
                   {/* Timestamp */}

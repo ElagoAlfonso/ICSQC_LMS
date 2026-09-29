@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import toast from 'react-hot-toast';
+import { isIcsqcEmail } from '../../utils/validation';
 
-const SCHOOL_BG = 'https://lh3.googleusercontent.com/p/AF1QipN0BjxHj2kHJDHOX8V3-wv1D2vr8GMjZTNBaHid=s1360-w1360-h1020';
+const SCHOOL_BG = '/school-background.jpg';
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -13,7 +14,6 @@ export default function LoginPage() {
   const [password, setPassword]   = useState('');
   const [showPw, setShowPw]       = useState(false);
   const [error, setError]         = useState('');
-  const [imgLoaded, setImgLoaded] = useState(false);
 
   useEffect(() => {
     if (isAuthenticated && user) redirectByRole(user.role);
@@ -29,6 +29,7 @@ export default function LoginPage() {
     e.preventDefault();
     setError('');
     if (!email || !password) { setError('Please enter your email and password.'); return; }
+    if (!isIcsqcEmail(email)) { setError('Please use your official ICSQC email address (lastname.icsqc@gmail.com).'); return; }
     try {
       await login(email, password);
       toast.success('Welcome back!');
@@ -38,20 +39,30 @@ export default function LoginPage() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', position: 'relative', fontFamily: 'system-ui,-apple-system,sans-serif' }}>
-      {/* Background */}
-      <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, #5c1010 0%, #3a0a0a 100%)' }}>
-        <img src={SCHOOL_BG} alt="" onLoad={() => setImgLoaded(true)}
-          style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: imgLoaded ? 0.15 : 0, transition: 'opacity 1.2s' }} />
-      </div>
+    <div style={{
+      height: '100vh',
+      width: '100vw',
+      display: 'flex',
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      fontFamily: 'system-ui,-apple-system,sans-serif',
+      backgroundImage: `linear-gradient(135deg, rgba(92,16,16,0.85) 0%, rgba(58,10,10,0.85) 100%), url(${SCHOOL_BG})`,
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+      backgroundRepeat: 'no-repeat',
+      backgroundAttachment: 'fixed',
+      margin: 0,
+      padding: 0,
+      overflow: 'hidden',
+    }}>
+      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.28)' }} />
 
       {/* Left branding */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '60px 64px', position: 'relative', zIndex: 1 }}>
         <div style={{ maxWidth: 460 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 48 }}>
-            <img src="https://icsqc.edu.ph/wp-content/uploads/2019/04/ICSQC-Logo.png" alt="ICSQC"
-              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display='none'; }}
-              style={{ width: 60, height: 60, objectFit: 'contain' }} />
+            <img src="/images/school-seal.png" alt="ICSQC" style={{ width: 60, height: 60, objectFit: 'contain', background: 'transparent' }} />
             <div>
               <p style={{ color: 'rgba(255,255,255,0.95)', fontWeight: 700, fontSize: '0.95rem', lineHeight: 1.3 }}>International Christian School</p>
               <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.82rem' }}>of Quezon City, Inc.</p>
@@ -72,7 +83,7 @@ export default function LoginPage() {
       </div>
 
       {/* Right – login card container */}
-      <div style={{ width: '100%', maxWidth: 480, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 32px', position: 'relative', zIndex: 1, background: 'rgba(0,0,0,0.15)', backdropFilter: 'blur(20px)', borderLeft: '1px solid rgba(255,255,255,0.07)' }}>
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 32px', position: 'relative', zIndex: 1, background: 'rgba(58,10,10,0.6)', backdropFilter: 'blur(20px)', borderLeft: '1px solid rgba(255,255,255,0.07)' }}>
         <div style={{ width: '100%', maxWidth: 370 }}>
           {/* White card */}
           <div style={{ background: '#fff', borderRadius: 16, padding: '38px 34px', boxShadow: '0 24px 60px rgba(0,0,0,0.4)' }}>
@@ -94,7 +105,7 @@ export default function LoginPage() {
             <form onSubmit={handleSubmit}>
               <div style={{ marginBottom: 16 }}>
                 <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#374151', marginBottom: 6 }}>Email address</label>
-                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@icsqc.edu.ph"
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Enter your email"
                   style={{ width: '100%', padding: '11px 14px', borderRadius: 8, border: '1.5px solid #E5E7EB', fontSize: '0.875rem', outline: 'none', boxSizing: 'border-box', color: '#111', transition: 'border-color 0.2s' }}
                   onFocus={e => e.target.style.borderColor='#7a1010'} onBlur={e => e.target.style.borderColor='#E5E7EB'} />
               </div>
@@ -102,7 +113,7 @@ export default function LoginPage() {
               <div style={{ marginBottom: 22 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                   <label style={{ fontSize: '0.78rem', fontWeight: 600, color: '#374151' }}>Password</label>
-                  <a href="#" style={{ fontSize: '0.75rem', color: '#7a1010', textDecoration: 'none' }}>Forgot password?</a>
+                  <Link to="/forgot-password" style={{ fontSize: '0.75rem', color: '#7a1010', textDecoration: 'none' }}>Forgot password?</Link>
                 </div>
                 <div style={{ position: 'relative' }}>
                   <input type={showPw ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter your password"

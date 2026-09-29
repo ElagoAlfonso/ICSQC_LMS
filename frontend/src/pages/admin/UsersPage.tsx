@@ -5,6 +5,7 @@ import { usersApi } from '../../utils/api';
 import type { User, Pagination as PaginationType } from '../../types';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
+import { isIcsqcEmail, isStrongPassword } from '../../utils/validation';
 
 const ROLE_OPTIONS = [
   { value: '', label: 'All Roles' },
@@ -19,7 +20,7 @@ const FORM_ROLE_OPTIONS = [
   { value: 'student', label: 'Student' },
 ];
 
-const INITIAL_FORM = { name: '', email: '', password: '', role: 'student', isActive: true };
+const INITIAL_FORM = { name: '', email: '', lrn: '', password: '', role: 'student', isActive: true };
 
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
@@ -49,16 +50,18 @@ export default function UsersPage() {
   const openCreate = () => { setEditUser(null); setForm(INITIAL_FORM); setModalOpen(true); };
   const openEdit = (u: User) => {
     setEditUser(u);
-    setForm({ name: u.name, email: u.email, password: '', role: u.role, isActive: u.isActive });
+    setForm({ name: u.name, email: u.email, lrn: u.lrn || '', password: '', role: u.role, isActive: u.isActive });
     setModalOpen(true);
   };
 
   const handleSave = async () => {
     if (!form.name || !form.email) { toast.error('Name and email are required'); return; }
+    if (!isIcsqcEmail(form.email)) { toast.error('Use an official ICSQC email: lastname.icsqc@gmail.com'); return; }
+    if (form.password && !isStrongPassword(form.password)) { toast.error('Password must include uppercase, lowercase, number, special character, and 8+ characters'); return; }
     setSaving(true);
     try {
       if (editUser) {
-        const payload: any = { name: form.name, email: form.email, role: form.role, isActive: form.isActive };
+        const payload: any = { name: form.name, email: form.email, lrn: form.lrn.trim(), role: form.role, isActive: form.isActive };
         if (form.password) payload.password = form.password;
         await usersApi.update(editUser._id, payload);
         toast.success('User updated successfully');
@@ -227,7 +230,8 @@ export default function UsersPage() {
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <Input label="Full Name *" placeholder="e.g. Juan dela Cruz" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-          <Input label="Email Address *" type="email" placeholder="user@icsqc.edu.ph" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+          {form.role === 'student' && <Input label="LRN" placeholder="Learner Reference Number" value={form.lrn} onChange={(e) => setForm({ ...form, lrn: e.target.value })} />}
+          <Input label="Email Address *" type="email" placeholder="lastname.icsqc@gmail.com" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
           <Input label={editUser ? 'New Password (leave blank to keep)' : 'Password *'} type="password" placeholder="••••••••" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
           <Select label="Role *" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} options={FORM_ROLE_OPTIONS} />
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>

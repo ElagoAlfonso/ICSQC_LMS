@@ -1,22 +1,24 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Search, Edit2, Trash2, GraduationCap, Users } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, GraduationCap, Users, Check, X } from 'lucide-react';
 import { Card, Button, Badge, DataTable, Pagination, Modal, Input, Select, EmptyState } from '../../components/ui';
-import { classesApi, academicYearsApi, usersApi } from '../../utils/api';
-import type { Class, AcademicYear, User, Pagination as PaginationType } from '../../types';
+import { classesApi, academicYearsApi, usersApi, subjectsApi } from '../../utils/api';
+import type { Class, AcademicYear, User, Pagination as PaginationType, ClassRequest, Subject } from '../../types';
 import toast from 'react-hot-toast';
 
-const GRADE_LEVELS = ['Kinder', 'Grade 1','Grade 2','Grade 3','Grade 4','Grade 5','Grade 6','Grade 7','Grade 8','Grade 9','Grade 10','Grade 11','Grade 12'].map(g => ({ value: g, label: g }));
+const GRADE_LEVELS = ['Grade 7','Grade 8','Grade 9','Grade 10','Grade 11','Grade 12'].map(g => ({ value: g, label: g }));
 
-const INITIAL_FORM = { name: '', section: '', gradeLevel: 'Grade 7', academicYear: '', adviser: '', isActive: true };
+const INITIAL_FORM = { name: '', section: '', gradeLevel: 'Grade 7', academicYear: '', adviser: '', isActive: true, subjects: [] as string[] };
 
 export default function ClassesPage() {
   const [classes, setClasses] = useState<Class[]>([]);
+  const [requests, setRequests] = useState<ClassRequest[]>([]);
   const [pagination, setPagination] = useState<PaginationType>({ total: 0, page: 1, pages: 1, limit: 10 });
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
   const [teachers, setTeachers] = useState<User[]>([]);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [editItem, setEditItem] = useState<Class | null>(null);
   const [form, setForm] = useState(INITIAL_FORM);
@@ -27,18 +29,23 @@ export default function ClassesPage() {
   const fetchClasses = async () => {
     setLoading(true);
     try {
-      const res = await classesApi.getAll({ page, limit: 10, search, academicYear: ayFilter });
-      setClasses(res.data.classes);
-      setPagination(res.data.pagination);
+      const [classesRes, requestsRes] = await Promise.all([
+        classesApi.getAll({ page, limit: 10, search, academicYear: ayFilter }),
+        classesApi.getRequests(),
+      ]);
+      setClasses(classesRes.data.classes);
+      setPagination(classesRes.data.pagination);
+      setRequests(requestsRes.data.requests || []);
     } catch { toast.error('Failed to load classes'); }
     setLoading(false);
   };
 
   useEffect(() => {
     const loadMeta = async () => {
-      const [ayRes, teachersRes] = await Promise.allSettled([
+      const [ayRes, teachersRes, subjectsRes] = await Promise.allSettled([
         academicYearsApi.getAll(),
         usersApi.getAll({ role: 'teacher', limit: 100 }),
+        subjectsApi.getAll({ limit: 200 }),
       ]);
       if (ayRes.status === 'fulfilled') {
         setAcademicYears(ayRes.value.data);
@@ -46,6 +53,7 @@ export default function ClassesPage() {
         if (current) { setAyFilter(current._id); setForm(f => ({ ...f, academicYear: current._id })); }
       }
       if (teachersRes.status === 'fulfilled') setTeachers(teachersRes.value.data.users);
+      if (subjectsRes.status === 'fulfilled') setSubjects(subjectsRes.value.data.subjects || []);
     };
     loadMeta();
   }, []);
@@ -54,11 +62,12 @@ export default function ClassesPage() {
 
   const ayOptions = [{ value: '', label: 'All Years' }, ...academicYears.map(ay => ({ value: ay._id, label: ay.name }))];
   const teacherOptions = [{ value: '', label: 'No Adviser' }, ...teachers.map(t => ({ value: t._id, label: t.name }))];
+  const getClassDisplay = (cls: Partial<Class>) => cls.section || cls.name || 'Class';
 
   const openCreate = () => {
     setEditItem(null);
     const currentAy = academicYears.find(ay => ay.isCurrent);
-    setForm({ ...INITIAL_FORM, academicYear: currentAy?._id || '' });
+    setForm({ ...INITIAL_FORM, academicYear: currentAy?._id || '', subjects: [] });
     setModalOpen(true);
   };
 
@@ -71,6 +80,9 @@ export default function ClassesPage() {
       academicYear: typeof cls.academicYear === 'object' ? (cls.academicYear as AcademicYear)._id : cls.academicYear,
       adviser: cls.adviser ? (typeof cls.adviser === 'object' ? (cls.adviser as User)._id : cls.adviser) : '',
       isActive: cls.isActive,
+      subjects: Array.isArray(cls.subjects)
+        ? cls.subjects.map((subject) => (typeof subject === 'object' ? (subject as Subject)._id : subject))
+        : [],
     });
     setModalOpen(true);
   };
@@ -82,7 +94,7 @@ export default function ClassesPage() {
     }
     setSaving(true);
     try {
-      const payload = { ...form, adviser: form.adviser || null };
+      const payload = { ...form, adviser: form.adviser || null, subjects: form.subjects || [] };
       if (editItem) {
         await classesApi.update(editItem._id, payload);
         toast.success('Class updated');
@@ -121,7 +133,7 @@ export default function ClassesPage() {
           </div>
           <div>
             <div style={{ fontWeight: 600, color: 'var(--gray-900)', fontSize: '0.875rem' }}>
-              {c.name} — {c.section}
+              {getClassDisplay(c)}
             </div>
             <div style={{ fontSize: '0.75rem', color: 'var(--gray-500)' }}>{c.gradeLevel}</div>
           </div>
@@ -181,6 +193,25 @@ export default function ClassesPage() {
         <Button icon={<Plus size={16} />} onClick={openCreate}>Add Class</Button>
       </div>
 
+      {requests.length > 0 && (
+        <Card title="Pending Class Requests" subtitle="Awaiting approval">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {requests.filter((req) => req.status === 'pending').map((request) => (
+              <div key={request._id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 14px', background: '#F9FAFB', borderRadius: 10 }}>
+                <div>
+                  <div style={{ fontWeight: 700, color: '#111' }}>{request.section || request.name}</div>
+                  <div style={{ fontSize: '0.75rem', color: '#6B7280' }}>{request.gradeLevel} · {typeof request.teacher === 'object' ? (request.teacher as User).name : 'Teacher'} · {typeof request.academicYear === 'object' ? (request.academicYear as AcademicYear).name : 'Year'}</div>
+                </div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <Button size="sm" variant="secondary" onClick={async () => { try { await classesApi.rejectRequest(request._id, 'Request requires more review.'); toast.success('Request rejected'); fetchClasses(); } catch { toast.error('Failed to reject request'); } }}><X size={12} /> Reject</Button>
+                  <Button size="sm" onClick={async () => { try { await classesApi.approveRequest(request._id); toast.success('Class approved'); fetchClasses(); } catch { toast.error('Failed to approve request'); } }}><Check size={12} /> Approve</Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
       <Card padding="16px">
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
           <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
@@ -211,6 +242,23 @@ export default function ClassesPage() {
           <Select label="Grade Level *" value={form.gradeLevel} onChange={(e) => setForm({ ...form, gradeLevel: e.target.value })} options={GRADE_LEVELS} />
           <Select label="Academic Year *" value={form.academicYear} onChange={(e) => setForm({ ...form, academicYear: e.target.value })} options={ayOptions.filter(o => o.value)} />
           <Select label="Adviser" value={form.adviser} onChange={(e) => setForm({ ...form, adviser: e.target.value })} options={teacherOptions} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--gray-700)' }}>Assigned Subjects</label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+              {subjects.length ? subjects.map((subject) => {
+                const checked = form.subjects.includes(subject._id);
+                return (
+                  <label key={subject._id} style={{ display: 'flex', alignItems: 'center', gap: '6px', border: '1px solid var(--gray-200)', borderRadius: '999px', padding: '6px 10px', fontSize: '0.75rem', cursor: 'pointer', background: checked ? '#F5F3FF' : '#fff' }}>
+                    <input type="checkbox" checked={checked} onChange={() => setForm((prev) => ({
+                      ...prev,
+                      subjects: checked ? prev.subjects.filter((id) => id !== subject._id) : [...prev.subjects, subject._id],
+                    }))} />
+                    {subject.name}
+                  </label>
+                );
+              }) : <span style={{ fontSize: '0.75rem', color: 'var(--gray-500)' }}>No subjects available yet.</span>}
+            </div>
+          </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <input type="checkbox" id="classActive" checked={form.isActive} onChange={(e) => setForm({ ...form, isActive: e.target.checked })} style={{ width: 16, height: 16, cursor: 'pointer' }} />
             <label htmlFor="classActive" style={{ fontSize: '0.875rem', color: 'var(--gray-700)', cursor: 'pointer' }}>Active class</label>

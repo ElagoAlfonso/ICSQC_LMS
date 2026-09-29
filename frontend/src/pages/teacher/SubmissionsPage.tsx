@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Search, CheckCircle2, Clock, Award, Eye, Edit2, FileText } from 'lucide-react';
 import { Card, Button, Badge, DataTable, Pagination, Modal, Input } from '../../components/ui';
 import { submissionsApi, examsApi } from '../../utils/api';
@@ -7,11 +8,12 @@ import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 
 export default function SubmissionsPage() {
+  const [searchParams] = useSearchParams();
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [exams, setExams] = useState<Exam[]>([]);
-  const [examFilter, setExamFilter] = useState('');
+  const [examFilter, setExamFilter] = useState(searchParams.get('exam') || '');
   const [viewModal, setViewModal] = useState<Submission | null>(null);
   const [gradeModal, setGradeModal] = useState<Submission | null>(null);
   const [gradeForm, setGradeForm] = useState({ score: 0, feedback: '' });
@@ -120,8 +122,8 @@ export default function SubmissionsPage() {
           <button onClick={e => { e.stopPropagation(); setViewModal(s); }} style={{ padding: '5px 9px', background: '#F3F4F6', border: 'none', borderRadius: '6px', color: '#6B7280', cursor: 'pointer', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '3px', fontFamily: 'var(--font-body)' }}>
             <Eye size={11} /> View
           </button>
-          <button onClick={e => { e.stopPropagation(); openGrade(s); }} style={{ padding: '5px 9px', background: '#EFF6FF', border: 'none', borderRadius: '6px', color: '#2563EB', cursor: 'pointer', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '3px', fontFamily: 'var(--font-body)' }}>
-            <Edit2 size={11} /> Grade
+          <button disabled={s.status === 'graded'} onClick={e => { e.stopPropagation(); openGrade(s); }} style={{ padding: '5px 9px', background: s.status === 'graded' ? '#D1FAE5' : '#EFF6FF', border: 'none', borderRadius: '6px', color: s.status === 'graded' ? '#059669' : '#2563EB', cursor: s.status === 'graded' ? 'default' : 'pointer', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '3px', fontFamily: 'var(--font-body)' }}>
+            {s.status === 'graded' ? <CheckCircle2 size={11} /> : <Edit2 size={11} />} {s.status === 'graded' ? 'Graded' : 'Grade'}
           </button>
         </div>
       )

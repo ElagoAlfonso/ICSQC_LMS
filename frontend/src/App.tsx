@@ -1,11 +1,12 @@
-<<<<<<< HEAD
-import React, { Suspense, lazy } from 'react';
+import React, { Suspense, lazy, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import DashboardLayout from './components/layout/DashboardLayout';
 
 /* ── Auth ─────────────────────────────────────── */
 const LoginPage            = lazy(() => import('./pages/auth/LoginPage'));
+const ForgotPasswordPage   = lazy(() => import('./pages/auth/ForgotPasswordPage'));
+const ResetPasswordPage    = lazy(() => import('./pages/auth/ResetPasswordPage'));
 
 /* ── Admin ────────────────────────────────────── */
 const AdminDashboard       = lazy(() => import('./pages/admin/Dashboard'));
@@ -16,30 +17,38 @@ const SubjectsPage         = lazy(() => import('./pages/admin/SubjectsPage'));
 const AdminExamsPage       = lazy(() => import('./pages/admin/ExamsPage'));
 const ActivityLogsPage     = lazy(() => import('./pages/admin/ActivityLogsPage'));
 const AnalyticsPage        = lazy(() => import('./pages/admin/AnalyticsPage'));
+const AdminMeetingsPage   = lazy(() => import('./pages/admin/MeetingsPage'));
 
 /* ── Teacher ──────────────────────────────────── */
 const TeacherDashboard     = lazy(() => import('./pages/teacher/Dashboard'));
 const TeacherClassesPage   = lazy(() => import('./pages/teacher/ClassesPage'));
-const TeacherClassDetail   = lazy(() => import('./pages/teacher/ClassDetailPage'));
+const TeacherSubjectWorkspace = lazy(() => import('./pages/shared/SubjectWorkspacePage'));
+const TeacherClassWorkspace = lazy(() => import('./pages/shared/ClassWorkspacePage'));
+const TeacherClassworkDetail = lazy(() => import('./pages/shared/ClassworkDetailPage'));
 const TeacherExamsPage     = lazy(() => import('./pages/teacher/ExamsPage'));
 const SubmissionsPage      = lazy(() => import('./pages/teacher/SubmissionsPage'));
 
 /* ── Student ──────────────────────────────────── */
 const StudentDashboard     = lazy(() => import('./pages/student/Dashboard'));
+const StudentSchoolworkPage = lazy(() => import('./pages/student/SchoolworkPage'));
 const StudentExamsPage     = lazy(() => import('./pages/student/ExamsPage'));
 const StudentGradesPage    = lazy(() => import('./pages/student/GradesPage'));
+const StudentClassWorkspace = lazy(() => import('./pages/shared/ClassWorkspacePage'));
+const StudentClassworkDetail = lazy(() => import('./pages/shared/ClassworkDetailPage'));
+const StudentClassesPage = lazy(() => import('./pages/student/ClassesPage'));
 
 /* ── Shared ───────────────────────────────────── */
 const AIAssistantPage      = lazy(() => import('./pages/shared/AIAssistantPage'));
 const TimetablePage        = lazy(() => import('./pages/shared/TimetablePage'));
 const AnnouncementsPage    = lazy(() => import('./pages/shared/AnnouncementsPage'));
+const ProfilePage          = lazy(() => import('./pages/shared/ProfilePage'));
 const ReportCardsPage      = lazy(() => import('./pages/shared/ReportCardsPage'));
 
 function Loading() {
   return (
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#F9FAFB' }}>
       <div style={{ textAlign:'center' }}>
-        <div style={{ width:40, height:40, border:'3px solid #E5E7EB', borderTopColor:'#7a1010', borderRadius:'50%', animation:'spin 0.8s linear infinite', margin:'0 auto 12px' }} />
+        <div style={{ width:40, height:40, border:'3px solid #E5E7EB', borderTopColor:'var(--crimson)', borderRadius:'50%', animation:'spin 0.8s linear infinite', margin:'0 auto 12px' }} />
         <p style={{ color:'#6B7280', fontSize:'0.875rem', fontFamily:'system-ui,sans-serif' }}>Loading…</p>
       </div>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
@@ -48,6 +57,10 @@ function Loading() {
 }
 
 export default function App() {
+  useEffect(() => {
+    // Apply maroon theme by default; user can toggle this class later if desired
+    document.documentElement.classList.add('theme-maroon');
+  }, []);
   return (
     <BrowserRouter>
       <Toaster
@@ -64,7 +77,13 @@ export default function App() {
         <Routes>
           {/* ── Public ───────────────────────────── */}
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
           <Route path="/"      element={<Navigate to="/login" replace />} />
+
+          <Route element={<DashboardLayout />}> 
+            <Route path="/profile" element={<ProfilePage />} />
+          </Route>
 
           {/* ── ADMIN ────────────────────────────── */}
           <Route element={<DashboardLayout requiredRole="admin" />}>
@@ -78,6 +97,7 @@ export default function App() {
             <Route path="/admin/timetable"      element={<TimetablePage />} />
             <Route path="/admin/announcements"  element={<AnnouncementsPage />} />
             <Route path="/admin/analytics"      element={<AnalyticsPage />} />
+            <Route path="/admin/meetings"       element={<AdminMeetingsPage />} />
             <Route path="/admin/logs"           element={<ActivityLogsPage />} />
             <Route path="/admin/ai-assistant"   element={<AIAssistantPage />} />
           </Route>
@@ -86,7 +106,9 @@ export default function App() {
           <Route element={<DashboardLayout requiredRole="teacher" />}>
             <Route path="/teacher/dashboard"         element={<TeacherDashboard />} />
             <Route path="/teacher/classes"           element={<TeacherClassesPage />} />
-            <Route path="/teacher/classes/:id"       element={<TeacherClassDetail />} />
+            <Route path="/teacher/classes/:classId" element={<TeacherClassWorkspace />} />
+            <Route path="/teacher/classes/:classId/classwork/:classworkId" element={<TeacherClassworkDetail />} />
+            <Route path="/teacher/subjects/:id"       element={<TeacherSubjectWorkspace />} />
             <Route path="/teacher/exams"             element={<TeacherExamsPage />} />
             <Route path="/teacher/submissions"       element={<SubmissionsPage />} />
             <Route path="/teacher/report-cards"      element={<ReportCardsPage />} />
@@ -98,7 +120,12 @@ export default function App() {
           {/* ── STUDENT ──────────────────────────── */}
           <Route element={<DashboardLayout requiredRole="student" />}>
             <Route path="/student/dashboard"     element={<StudentDashboard />} />
-            <Route path="/student/subjects"      element={<SubjectsPage />} />
+            <Route path="/student/schoolwork"    element={<StudentSchoolworkPage />} />
+            <Route path="/student/classes"       element={<StudentClassesPage />} />
+            <Route path="/student/classes/:classId" element={<StudentClassWorkspace />} />
+            <Route path="/student/classes/:classId/classwork/:classworkId" element={<StudentClassworkDetail />} />
+            <Route path="/student/subjects"      element={<Navigate to="/student/classes" replace />} />
+            <Route path="/student/subjects/:id"  element={<Navigate to="/student/classes" replace />} />
             <Route path="/student/exams"         element={<StudentExamsPage />} />
             <Route path="/student/grades"        element={<StudentGradesPage />} />
             <Route path="/student/timetable"     element={<TimetablePage />} />
@@ -112,40 +139,3 @@ export default function App() {
     </BrowserRouter>
   );
 }
-=======
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
-
-function App() {
-  const [count, setCount] = useState(0)
-
-  return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
-}
-
-export default App
->>>>>>> a77495f626dbe90aaff470650f7e47812e2b1d22

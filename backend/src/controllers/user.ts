@@ -1,36 +1,48 @@
-<<<<<<< HEAD
-import e, { type Request, type Response } from "express";
-import User from "../models/user";
-import { generateToken } from "../utils/generateToken";
-import { logActivity } from "../utils/activitieslog";
-import type { Auth } from "mongodb";
-import type { AuthRequest } from "../middleware/auth";
-=======
 import { type Request, type Response } from "express";
 import User from "../models/user";
 import { generateToken } from "../utils/generateToken";
 import { logActivity } from "../utils/activitieslog";
->>>>>>> a77495f626dbe90aaff470650f7e47812e2b1d22
+import type { AuthRequest } from "../middleware/auth";
+import { createNotifications } from "../utils/notifications";
+import {
+    isIcsqcEmail,
+    isStrongPassword,
+    normalizeEmail,
+    passwordRequirementsMessage,
+} from "../utils/authValidation";
+
 //  @desc    Register a new user
 //  @route   POST /api/users/register
 //  @access  Private (Admin & Teacher only)
 
-export const register = async ( 
-    req: Request, 
+export const register = async (
+    req: Request,
     res: Response): Promise<void> => {
     try{
         const {
             name,
             email,
+            lrn,
             password,
             role,
             studentClass,
             teacherSubject,
             isActive
         } = req.body;
+        const requestingUser = (req as AuthRequest).user;
 
         // Check if user already exists
-        const existingUser = await User.findOne({ email });
+        const normalizedEmail = normalizeEmail(email);
+        if (!isIcsqcEmail(normalizedEmail)) {
+            res.status(400).json({ message: "Please use your official ICSQC email address (lastname.icsqc@gmail.com)." });
+            return;
+        }
+        if (!isStrongPassword(password)) {
+            res.status(400).json({ message: passwordRequirementsMessage });
+            return;
+        }
+
+        const existingUser = await User.findOne({ email: normalizedEmail });
         if (existingUser) {
             res.status(400).json({ message: "User already exists" });
             return;
@@ -39,17 +51,24 @@ export const register = async (
         // Create new user
         const newUser = await User.create({
             name,
-            email,
+            email: normalizedEmail,
+            lrn: role === "student" ? String(lrn || "").trim() : undefined,
             password,
-            role,
-            studentClass,
-            teacherSubject,
-            isActive,
+            role: requestingUser?.role === "admin" ? role : "student",
+            studentClass: requestingUser ? studentClass : undefined,
+            teacherSubject: requestingUser ? teacherSubject : undefined,
+            isActive: requestingUser ? isActive : true,
         });
 
         if (newUser) {
+            const admins = await User.find({ role: "admin", isActive: true }).select("_id");
+            await createNotifications(admins.map((admin) => admin._id), {
+                title: "New user registration",
+                message: `${newUser.name} registered as a ${newUser.role}.`,
+                type: "user",
+                relatedResource: newUser._id,
+            });
             // We don't have req.user type defined , so we use a type assertion to access
-<<<<<<< HEAD
             if ((req as any).user) {  // logged-in admin/teacher
                 await logActivity({
                     userId: (req as any).user._id,  // admin/teacher doing the creation
@@ -64,19 +83,11 @@ export const register = async (
           details: `User ${newUser.email} registered`,
         });
       }
-=======
-            if((req as any).user) {
-                await logActivity({
-                    userId: (req as any).user._id,
-                    action: "User Registration",
-                    details: `Registered new user with email: ${newUser.email}`,
-                });
-            }
->>>>>>> a77495f626dbe90aaff470650f7e47812e2b1d22
             res.status(201).json({
                 _id: newUser._id,
                 name: newUser.name,
                 email: newUser.email,
+                lrn: newUser.lrn,
                 role: newUser.role,
                 isActive: newUser.isActive,
                 studentClass: newUser.studentClass,
@@ -86,8 +97,8 @@ export const register = async (
         } else {
             res.status(400).json({ message: "Invalid user data" });
         }
- }catch (error) {
-        res.status(500).json({ message: "Server error" , error});
+ }catch {
+     res.status(500).json({ message: "Server error" });
     }
 };
 
@@ -97,14 +108,23 @@ export const register = async (
 
 export const login = async  (req: Request, res: Response): Promise<void> => {
     try{
-    const {email,password} = req.body;
+    if (!process.env.JWT_SECRET) {
+        res.status(503).json({ message: "Login is unavailable because JWT_SECRET is not configured" });
+        return;
+    }
+
+    const email = normalizeEmail(req.body.email);
+    const { password } = req.body;
+    if (!isIcsqcEmail(email)) {
+        res.status(401).json({ message: "Invalid email or password" });
+        return;
+    }
     const user = await User.findOne({ email });
 
     // Check if user exists and password matches
-<<<<<<< HEAD
-    if (user && (await user.matchPassword(password))) {
+    if (user?.isActive && (await user.matchPassword(password))) {
         // generate token and log activity
-        generateToken(user._id.toString(), res);       
+        generateToken(user._id.toString(), res);
         res.json({
             _id: user._id,
             name: user.name,
@@ -114,21 +134,13 @@ export const login = async  (req: Request, res: Response): Promise<void> => {
             studentClass: user.studentClass,
             teacherSubject: user.teacherSubject,
         });
-=======
-    if (user && await user.matchPassword(password)) {
-        // generate token
-        generateToken(user._id.toString(), res);
-        res.json(user)
->>>>>>> a77495f626dbe90aaff470650f7e47812e2b1d22
-    } else {    
+    } else {
         res.status(401).json({ message: "Invalid email or password" });
     }
-    } catch (error) {
-        res.status(500).json({ message: "Server Error", error});
+    } catch {
+        res.status(500).json({ message: "Server Error" });
     }
-<<<<<<< HEAD
 };
-
 //  @desc    Update user (Admin)
 //  @route   POST /api/users/:id
 //  @access  Private /Admin
@@ -138,9 +150,28 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
         const user = await User.findById(req.params.id);
         // We cannot return something here (res.json) so the client is still waiting for response.
         if (user) {
+            const requestingUser = (req as AuthRequest).user;
+            if (requestingUser?.role === "teacher" && user.role !== "student") {
+                res.status(403).json({ message: "Teachers can only manage student accounts." });
+                return;
+            }
+            if (requestingUser?.role === "teacher" && req.body.role && req.body.role !== "student") {
+                res.status(403).json({ message: "Teachers cannot assign privileged roles." });
+                return;
+            }
+            const normalizedEmail = normalizeEmail(req.body.email || user.email);
+            if (!isIcsqcEmail(normalizedEmail)) {
+                res.status(400).json({ message: "Please use your official ICSQC email address (lastname.icsqc@gmail.com)." });
+                return;
+            }
+            if (req.body.password && !isStrongPassword(req.body.password)) {
+                res.status(400).json({ message: passwordRequirementsMessage });
+                return;
+            }
             user.name = req.body.name || user.name;
-            user.email = req.body.email || user.email;
+            user.email = normalizedEmail;
             user.role = req.body.role || user.role;
+            user.lrn = user.role === "student" ? String(req.body.lrn ?? user.lrn ?? "").trim() : undefined;
             user.isActive = req.body.isActive !== undefined ? req.body.isActive : user.isActive;
             user.studentClass = req.body.studentClass || user.studentClass;
             user.teacherSubject = req.body.teacherSubject || user.teacherSubject;
@@ -162,6 +193,7 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
                 _id: updatedUser._id,
                 name: updatedUser.name,
                 email: updatedUser.email,
+                lrn: updatedUser.lrn,
                 role: updatedUser.role,
                 isActive: updatedUser.isActive,
                 studentClass: updatedUser.studentClass,
@@ -171,12 +203,12 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
         }else {
             res.status(404).json({ message: "User not found" });
         }
-    }catch (error) {
-        res.status(500).json({ message: "Server Error", error});
+    }catch {
+        res.status(500).json({ message: "Server Error" });
     }
 }
 
-// @desc   Get user (With Pagination(ddividing large datasets or content into smaller chunks) and Filtering)
+// @desc   Get user (With Pagination and Filtering)
 // @route  GET /api/users/:id
 // @access  Private/Admin
 export const getUsers = async (req: Request, res: Response) => {
@@ -188,7 +220,9 @@ export const getUsers = async (req: Request, res: Response) => {
         const skip = (page - 1) * limit;
         const filter: any = {};
 
-        if (role && role !== "all" && role !== "") { // Filter by role if provided
+        if ((req as AuthRequest).user?.role === "teacher") {
+            filter.role = "student";
+        } else if (role && role !== "all" && role !== "") { // Filter by role if provided
             filter.role = role;
         }
 
@@ -196,100 +230,100 @@ export const getUsers = async (req: Request, res: Response) => {
             filter.$or = [
                 { name: { $regex: search, $options: "i" } },
                 { email: { $regex: search, $options: "i" } },
+                { lrn: { $regex: search, $options: "i" } },
             ];
         }
-        // Fetch users with pagination and filtering
-        const [total, users] = await Promise.all([
-            User.countDocuments(filter), // Get total count for pagination
-            User.find(filter)
-            .select("-password") // Exclude password field
-         // .populate("studentClass", "_id name section") 
-         // .populate("teacherSubject", "_id name section") 
-            .sort({ createdAt: -1 })
-            .skip(skip)
-            .limit(limit),
-        ]);
 
-        // Send response
+        const users = await User.find(filter)
+            .select("-password")
+            .skip(skip)
+            .limit(limit)
+            .sort({ createdAt: -1 });
+
+        const totalUsers = await User.countDocuments(filter);
+        const totalPages = Math.ceil(totalUsers / limit);
+
         res.json({
             users,
             pagination: {
-                total,
-                page,
-                pages: Math.ceil(total / limit),
-                limit,
-            }
-        })
-    } catch (error) {
-        res.status(500).json({ message: "Server Error", error});
+                currentPage: page,
+                totalPages,
+                totalUsers,
+                hasNextPage: page < totalPages,
+                hasPrevPage: page > 1,
+            },
+        });
+    }catch {
+        res.status(500).json({ message: "Server Error" });
+    }
+}
+
+// @desc   Get user profile
+// @route  GET /api/users/profile
+// @access Private
+export const getUserProfile = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        if (!req.user) {
+            res.status(401).json({ message: "Not authorized" });
+            return;
+        }
+
+        const user = await User.findById(req.user._id).select("-password");
+        if (user) {
+            res.json(user);
+        } else {
+            res.status(404).json({ message: "User not found" });
+        }
+    } catch {
+        res.status(500).json({ message: "Server Error" });
     }
 };
 
-// next
-// @desc   Delete user (Admin)
+// @desc   Delete user
 // @route  DELETE /api/users/:id
-// @access  Private/Admin
-
-export const deleteUser = async (req: Request, res: Response) => {
-     try{
+// @access Private/Admin
+export const deleteUser = async (req: Request, res: Response): Promise<void> => {
+    try {
         const user = await User.findById(req.params.id);
         if (user) {
-            await user.deleteOne();
+            if ((req as AuthRequest).user?.role === "teacher" && user.role !== "student") {
+                res.status(403).json({ message: "Teachers can only manage student accounts." });
+                return;
+            }
+            await User.deleteOne({ _id: req.params.id });
+
             if ((req as any).user) {
-                // we are passing userId as objectId instead of string
                 await logActivity({
                     userId: (req as any).user._id,
                     action: "Delete User",
-                    details: `Deleted user with email:  ${user.email}`,
+                    details: `Deleted user with email: ${user.email}`,
                 });
             }
+
             res.json({ message: "User deleted successfully" });
         } else {
             res.status(404).json({ message: "User not found" });
         }
-        } catch (error) {
-    res.status(500).json({ message: "Server Error", error});
-    }  
-};
-
-// @desc   get user profile (via cookie)
-// @route  GET /api/users/profile
-// @access  Private
-
-export const getUserProfile = async (req: AuthRequest, res: Response) => {
-    try {
-        if (req.user) {
-            res.json({
-                user: {
-                    _id: req.user._id,
-                    name: req.user.name,
-                    email: req.user.email,
-                    role: req.user.role,
-                }
-        });
-        }else{
-            res.status(401).json({ message: "Not authorized" });
-        }
-    } catch (error) {
-        res.status(500).json({ message: "Server Error", error});
-    }   
-};
-
-// @desc   Logout user  / clear cookie 
-// @route  POST /api/users/logout
-// @access  Public
-
-export const logout = async (req: Request, res: Response) => {
-    try {
-        res.cookie("jwt", "", {
-            httpOnly: true,
-            expires: new Date(0), // To expire the cookie immediately
-        });
-        res.json({ message: "Logged out successfully" });
-    } catch (error) {
-        res.status(500).json({ message: "Server Error", error});
+    } catch {
+        res.status(500).json({ message: "Server Error" });
     }
 };
-=======
-}
->>>>>>> a77495f626dbe90aaff470650f7e47812e2b1d22
+
+// @desc   Logout user
+// @route  POST /api/users/logout
+// @access Private
+export const logout = async (req: Request, res: Response): Promise<void> => {
+    try {
+        // Clear the JWT cookie
+        res.clearCookie("jwt", {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
+            path: "/",
+        });
+        res.json({ message: "Logged out successfully" });
+    } catch {
+        res.status(500).json({ message: "Server Error" });
+    }
+};
+

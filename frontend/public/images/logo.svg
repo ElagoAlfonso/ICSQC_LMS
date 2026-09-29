@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="40" viewBox="0 0 360 120" role="img" aria-label="ICSQC logo">
+  <defs>
+    <linearGradient id="g1" x1="0%" x2="100%" y1="0%" y2="100%">
+      <stop offset="0%" stop-color="#7a1010"/>
+      <stop offset="100%" stop-color="#5b0f0f"/>
+    </linearGradient>
+  </defs>
+  <rect width="360" height="120" fill="none" />
+  <g transform="translate(20,20)">
+    <circle cx="40" cy="40" r="36" fill="url(#g1)" />
+    <text x="40" y="50" font-family="Georgia, serif" font-size="36" fill="#fff" font-weight="700" text-anchor="middle">I</text>
+  </g>
+  <text x="110" y="68" font-family="Playfair Display, Georgia, serif" font-size="28" fill="#111827" font-weight="700">International Christian</text>
+  <text x="110" y="96" font-family="DM Sans, system-ui, sans-serif" font-size="14" fill="#6B7280">School of Quezon City</text>
+</svg>

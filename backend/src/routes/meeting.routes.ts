@@ -1,0 +1,22 @@
+import express from "express";
+import { protect, authorize } from "../middleware/auth";
+import { requireGoogleConfiguration } from "../middleware/googleAuth";
+import { cancelMeeting, createClassMeet, createMeeting, deleteMeeting, endClassMeet, getAdminMeetings, getClassMeet, getClassMeetings, getMeetingById, getStudentMeetings, getTeacherMeetings, updateMeeting } from "../controllers/meeting.controller";
+const router = express.Router();
+router.post("/classes/:classId/meet", protect, authorize(["teacher", "admin"]), requireGoogleConfiguration, createClassMeet);
+router.get("/classes/:classId/meet", protect, authorize(["teacher", "student", "admin"]), getClassMeet);
+router.delete("/classes/:classId/meet", protect, authorize(["teacher", "admin"]), endClassMeet);
+router.post("/classes/:classId/meetings", protect, authorize(["teacher"]), createMeeting);
+router.get("/classes/:classId/meetings", protect, authorize(["teacher", "student", "admin"]), getClassMeetings);
+router.put("/classes/:classId/meetings/:meetingId", protect, authorize(["teacher", "admin"]), updateMeeting);
+router.delete("/classes/:classId/meetings/:meetingId", protect, authorize(["teacher", "admin"]), cancelMeeting);
+router.post("/meetings/create", protect, authorize(["teacher"]), createMeeting);
+router.put("/meetings/:id", protect, authorize(["teacher", "admin"]), updateMeeting);
+router.delete("/meetings/:id", protect, authorize(["teacher", "admin"]), deleteMeeting);
+router.get("/meetings/teacher", protect, authorize(["teacher"]), getTeacherMeetings);
+router.get("/meetings/student", protect, authorize(["student"]), getStudentMeetings);
+router.get("/meetings/:id", protect, getMeetingById);
+router.get("/admin/meetings", protect, authorize(["admin"]), getAdminMeetings);
+router.delete("/admin/meetings/:id", protect, authorize(["admin"]), deleteMeeting);
+
+export default router;

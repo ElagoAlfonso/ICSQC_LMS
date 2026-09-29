@@ -1,26 +1,31 @@
 import React, { useEffect, useState } from 'react';
-import { BookOpen, ClipboardList, Users, FileText, Clock } from 'lucide-react';
-import { StatCard, Card, Badge } from '../../components/ui';
+import { useNavigate } from 'react-router-dom';
+import { BookOpen, Calendar, ClipboardList, FileText, Users, Clock } from 'lucide-react';
+import { StatCard, Card, Badge, Button } from '../../components/ui';
 import { useAuthStore } from '../../store/authStore';
-import { subjectsApi, examsApi, submissionsApi, academicYearsApi } from '../../utils/api';
+import { subjectsApi, examsApi, submissionsApi, academicYearsApi, googleApi } from '../../utils/api';
 import { format } from 'date-fns';
 import type { Exam, Subject } from '../../types';
 
 export default function TeacherDashboard() {
   const { user } = useAuthStore();
+  const navigate = useNavigate();
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [exams, setExams] = useState<Exam[]>([]);
   const [pendingCount, setPendingCount] = useState(0);
   const [currentYear, setCurrentYear] = useState('');
+  const [calendarConnected, setCalendarConnected] = useState(false);
+  const [calendarLoading, setCalendarLoading] = useState(true);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const load = async () => {
       try {
-        const [subjRes, examRes, ayRes] = await Promise.allSettled([
+        const [subjRes, examRes, ayRes, calendarRes] = await Promise.allSettled([
           subjectsApi.getAll({ limit: 20 }),
           examsApi.getAll({ limit: 6 }),
           academicYearsApi.getAll(),
+          googleApi.getStatus(),
         ]);
         if (subjRes.status === 'fulfilled') setSubjects(subjRes.value.data.subjects || []);
         if (examRes.status === 'fulfilled') setExams(examRes.value.data.exams || []);
@@ -28,11 +33,14 @@ export default function TeacherDashboard() {
           const current = ayRes.value.data.find((ay: any) => ay.isCurrent);
           if (current) setCurrentYear(current.name);
         }
+        if (calendarRes.status === 'fulfilled') setCalendarConnected(Boolean(calendarRes.value.data.connected));
       } catch {}
+      setCalendarLoading(false);
       setLoading(false);
     };
     load();
   }, []);
+
 
   const activeExams = exams.filter(e => e.status === 'published');
   const draftExams = exams.filter(e => e.status === 'draft');
@@ -67,6 +75,16 @@ export default function TeacherDashboard() {
         <StatCard label="Total Exams" value={exams.length} icon={<FileText size={22} />} color="#059669" bg="#D1FAE5" />
       </div>
 
+      <Card
+        title="Google Calendar"
+        subtitle={calendarLoading ? 'Checking connection...' : calendarConnected ? 'Connected and ready for Google Meet' : 'Connect Calendar to create Meet sessions'}
+        action={<Button icon={<Calendar size={16} />} onClick={googleApi.connectCalendar}>{calendarConnected ? 'Reconnect' : 'Connect'}</Button>}
+      >
+        <p style={{ color: 'var(--gray-500)', fontSize: '0.875rem', margin: 0 }}>
+          Meet sessions are added to your primary Google Calendar automatically.
+        </p>
+      </Card>
+
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
         {/* My Subjects */}
         <Card title="My Subjects" subtitle={`${subjects.length} subjects assigned`}>
@@ -80,8 +98,8 @@ export default function TeacherDashboard() {
                 return (
                   <div key={s._id} style={{
                     display: 'flex', alignItems: 'center', gap: '10px',
-                    padding: '10px', borderRadius: '10px', background: 'var(--gray-50)',
-                  }}>
+                    padding: '10px', borderRadius: '10px', background: 'var(--gray-50)', cursor: 'pointer',
+                  }} onClick={() => navigate(`/teacher/subjects/${s._id}`)}>
                     <div style={{ width: 36, height: 36, borderRadius: '9px', background: colors[i % 6], display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                       <span style={{ fontSize: '0.68rem', fontWeight: 700, color: texts[i % 6] }}>{s.code.slice(0, 3)}</span>
                     </div>

@@ -34,7 +34,7 @@ export const createAcademicYear = async (
         });
 
         await logActivity({ 
-            userId: req.user!._id, 
+            userId: req.user!._id.toString(), 
             action: "CREATE_ACADEMIC_YEAR",
             details: `Created academic year ${name}` 
         });

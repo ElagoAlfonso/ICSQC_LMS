@@ -1,17 +1,32 @@
 import React, { useEffect, useState } from 'react';
-import { Clock, Plus, Save, Trash2 } from 'lucide-react';
-import { Card, Button, Select, Modal, Input, Badge } from '../../components/ui';
-import { timetableApi, classesApi, subjectsApi, usersApi } from '../../utils/api';
+import { Clock, Plus } from 'lucide-react';
+import { Card } from '../../components/ui';
+import { timetableApi, classesApi } from '../../utils/api';
 import { useAuthStore } from '../../store/authStore';
-import type { Class, Subject, User } from '../../types';
-import toast from 'react-hot-toast';
+import type { Class, Subject } from '../../types';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-const PERIODS = [
-  '07:00–08:00', '08:00–09:00', '09:00–10:00', '10:00–11:00',
-  '11:00–12:00', '12:00–13:00', '13:00–14:00', '14:00–15:00',
-  '15:00–16:00', '16:00–17:00',
-];
+const GRID_START_MINUTES = 7 * 60;
+const GRID_END_MINUTES = 17 * 60;
+const INTERVAL_MINUTES = 15;
+
+const formatTime = (minutes: number) => {
+  const hour = Math.floor(minutes / 60);
+  const minute = minutes % 60;
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+};
+
+const timeOptions = Array.from(
+  { length: (GRID_END_MINUTES - GRID_START_MINUTES) / INTERVAL_MINUTES + 1 },
+  (_, index) => formatTime(GRID_START_MINUTES + index * INTERVAL_MINUTES),
+);
+
+const timeToMinutes = (time: string) => {
+  const [hours, minutes] = time.split(':').map(Number);
+  return hours * 60 + minutes;
+};
+
+const formatInterval = (startTime: string, endTime: string) => `${startTime}–${endTime}`;
 
 const DAY_COLORS: Record<string, string> = {
   Monday: '#FEE2E2', Tuesday: '#DBEAFE', Wednesday: '#D1FAE5',
@@ -32,131 +47,77 @@ interface TimeSlot {
   room?: string;
 }
 
-const INITIAL_SLOT = { dayOfWeek: 'Monday', startTime: '07:00', endTime: '08:00', subject: '', teacher: '', room: '' };
-
 export default function TimetablePage() {
   const { user } = useAuthStore();
-  const [classes, setClasses] = useState<Class[]>([]);
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [teachers, setTeachers] = useState<User[]>([]);
-  const [selectedClass, setSelectedClass] = useState('');
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
-  const [timetableId, setTimetableId] = useState<string | null>(null);
+  const [classes, setClasses] = useState<Class[]>([]);
+  const [selectedClassId, setSelectedClassId] = useState('');
+  const [slotForm, setSlotForm] = useState({ subject: '', dayOfWeek: 'Monday', startTime: '09:00', endTime: '10:00', room: '' });
+  const [savingSlot, setSavingSlot] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [slotForm, setSlotForm] = useState(INITIAL_SLOT);
-  const [editSlotIdx, setEditSlotIdx] = useState<number | null>(null);
-
-  const canEdit = user?.role === 'admin' || user?.role === 'teacher';
 
   useEffect(() => {
     const load = async () => {
-      const [classRes, subjRes, teachRes] = await Promise.allSettled([
-        classesApi.getAll({ limit: 100 }),
-        subjectsApi.getAll({ limit: 100 }),
-        usersApi.getAll({ role: 'teacher', limit: 100 }),
-      ]);
-      if (classRes.status === 'fulfilled') {
-        const cls = classRes.value.data.classes || [];
-        setClasses(cls);
-        if (cls.length > 0) setSelectedClass(cls[0]._id);
-      }
-      if (subjRes.status === 'fulfilled') setSubjects(subjRes.value.data.subjects || []);
-      if (teachRes.status === 'fulfilled') setTeachers(teachRes.value.data.users || []);
-    };
-    load();
-  }, []);
-
-  useEffect(() => {
-    if (!selectedClass) return;
-    const fetch = async () => {
       setLoading(true);
       try {
-        const res = await timetableApi.getByClass(selectedClass);
-        setTimeSlots(res.data.timeSlots || []);
-        setTimetableId(res.data._id || null);
+        const response = await classesApi.getAll({ limit: 100 });
+        const availableClasses = (response.data.classes || []) as Class[];
+        setClasses(availableClasses);
+        setSelectedClassId((current) => current || availableClasses[0]?._id || '');
+        const timetableResponses = await Promise.allSettled(
+          availableClasses.map((classDoc) => timetableApi.getByClass(classDoc._id)),
+        );
+        const loadedSlots = timetableResponses
+          .filter((result): result is PromiseFulfilledResult<any> => result.status === 'fulfilled')
+          .flatMap((result) => result.value.data.timeSlots || [])
+          .filter((slot: TimeSlot) => user?.role !== 'teacher' || (typeof slot.teacher === 'object' && slot.teacher?._id === user._id)) as TimeSlot[];
+        setTimeSlots(loadedSlots);
       } catch {
         setTimeSlots([]);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
-    fetch();
-  }, [selectedClass]);
+    load();
+  }, [user?._id, user?.role]);
 
-  const openAdd = () => {
-    setEditSlotIdx(null);
-    setSlotForm(INITIAL_SLOT);
-    setModalOpen(true);
-  };
+  const selectedClass = classes.find((classDoc) => classDoc._id === selectedClassId);
+  const classSubjects = (selectedClass?.subjects || []).filter((subject): subject is Subject => typeof subject === 'object');
 
-  const openEdit = (slot: TimeSlot, idx: number) => {
-    setEditSlotIdx(idx);
-    setSlotForm({
-      dayOfWeek: slot.dayOfWeek,
-      startTime: slot.startTime,
-      endTime: slot.endTime,
-      subject: typeof slot.subject === 'object' ? slot.subject?._id || '' : slot.subject || '',
-      teacher: typeof slot.teacher === 'object' ? slot.teacher?._id || '' : slot.teacher || '',
-      room: slot.room || '',
-    });
-    setModalOpen(true);
-  };
-
-  const handleSaveSlot = () => {
-    if (!slotForm.subject || !slotForm.dayOfWeek) {
-      toast.error('Day and subject are required');
+  const saveSlot = async () => {
+    if (!selectedClass || !slotForm.subject || !user?._id) return;
+    if (timeToMinutes(slotForm.endTime) <= timeToMinutes(slotForm.startTime)) {
+      window.alert('End time must be later than start time.');
       return;
     }
-    const subjectObj = subjects.find(s => s._id === slotForm.subject);
-    const teacherObj = teachers.find(t => t._id === slotForm.teacher);
-    const newSlot: TimeSlot = {
-      ...slotForm,
-      subject: subjectObj || slotForm.subject,
-      teacher: teacherObj || slotForm.teacher,
-    };
-    if (editSlotIdx !== null) {
-      const updated = [...timeSlots];
-      updated[editSlotIdx] = newSlot;
-      setTimeSlots(updated);
-    } else {
-      setTimeSlots(prev => [...prev, newSlot]);
-    }
-    setModalOpen(false);
-  };
-
-  const handleDeleteSlot = (idx: number) => {
-    setTimeSlots(prev => prev.filter((_, i) => i !== idx));
-  };
-
-  const handleSaveTimetable = async () => {
-    if (!selectedClass) { toast.error('Select a class first'); return; }
-    setSaving(true);
+    setSavingSlot(true);
     try {
-      const payload = {
-        class: selectedClass,
-        timeSlots: timeSlots.map(s => ({
-          ...s,
-          subject: typeof s.subject === 'object' ? s.subject._id : s.subject,
-          teacher: typeof s.teacher === 'object' ? s.teacher._id : s.teacher,
-        })),
-      };
-      if (timetableId) {
-        await timetableApi.update(timetableId, payload);
-      } else {
-        const res = await timetableApi.create(payload);
-        setTimetableId(res.data._id);
-      }
-      toast.success('Timetable saved successfully');
-    } catch { toast.error('Failed to save timetable'); }
-    setSaving(false);
+      const currentResponse = await timetableApi.getByClass(selectedClass._id);
+      const existingSlots = currentResponse.data.timeSlots || [];
+      const newSlot = { ...slotForm, subject: slotForm.subject, teacher: user._id };
+      await timetableApi.create({
+        class: selectedClass._id,
+        academicYear: typeof selectedClass.academicYear === 'object' ? selectedClass.academicYear._id : selectedClass.academicYear,
+        timeSlots: [...existingSlots.map((slot: TimeSlot) => ({ dayOfWeek: slot.dayOfWeek, startTime: slot.startTime, endTime: slot.endTime, subject: typeof slot.subject === 'object' ? slot.subject._id : slot.subject, teacher: typeof slot.teacher === 'object' ? slot.teacher._id : slot.teacher, room: slot.room })), newSlot],
+      });
+      setTimeSlots((current) => [...current, { ...newSlot, subject: classSubjects.find((subject) => subject._id === newSlot.subject), teacher: user }]);
+      setSlotForm((current) => ({ ...current, room: '' }));
+    } catch (error: any) {
+      window.alert(error.response?.data?.message || 'Unable to save this timetable slot.');
+    } finally {
+      setSavingSlot(false);
+    }
   };
 
-  const classOptions = [{ value: '', label: 'Select a class...' }, ...classes.map(c => ({ value: c._id, label: `${c.name} — ${c.section} (${c.gradeLevel})` }))];
-  const subjectOptions = [{ value: '', label: 'Select subject' }, ...subjects.map(s => ({ value: s._id, label: `${s.name} (${s.code})` }))];
-  const teacherOptions = [{ value: '', label: 'Select teacher' }, ...teachers.map(t => ({ value: t._id, label: t.name }))];
+  const gridRows = Array.from(
+    { length: (GRID_END_MINUTES - GRID_START_MINUTES) / INTERVAL_MINUTES },
+    (_, index) => {
+      const startMinutes = GRID_START_MINUTES + index * INTERVAL_MINUTES;
+      return { startTime: formatTime(startMinutes), endTime: formatTime(startMinutes + INTERVAL_MINUTES) };
+    },
+  );
 
-  // Build grid: day → time → slot
+  // Build grid: day → start time → slot. Existing schedules keep their exact duration.
   const grid: Record<string, Record<string, TimeSlot>> = {};
   DAYS.forEach(d => { grid[d] = {}; });
   timeSlots.forEach(slot => {
@@ -171,28 +132,22 @@ export default function TimetablePage() {
             <Clock size={22} color="#8B1A1A" /> Class Timetable
           </h1>
           <p style={{ color: 'var(--gray-500)', fontSize: '0.875rem', marginTop: '2px' }}>
-            View and manage weekly class schedules
+            View weekly class schedules
           </p>
         </div>
-        {canEdit && (
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <Button variant="secondary" icon={<Plus size={15} />} onClick={openAdd}>Add Period</Button>
-            <Button icon={<Save size={15} />} loading={saving} onClick={handleSaveTimetable}>Save Timetable</Button>
-          </div>
-        )}
       </div>
 
-      {/* Class Selector */}
-      <Card padding="16px">
-        <div style={{ maxWidth: '360px' }}>
-          <Select
-            label="Select Class"
-            value={selectedClass}
-            onChange={e => setSelectedClass(e.target.value)}
-            options={classOptions}
-          />
+      {user?.role !== 'student' && <Card title="Add class schedule" subtitle="Choose a class and subject, then add its weekly time slot.">
+        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.2fr 1fr 1fr 1fr auto', gap: 8, alignItems: 'end' }}>
+          <label style={{ display: 'grid', gap: 5, fontSize: '0.75rem', color: '#475569' }}>Class<select value={selectedClassId} onChange={(event) => { setSelectedClassId(event.target.value); setSlotForm((current) => ({ ...current, subject: '' })); }} style={{ padding: '9px 10px', border: '1px solid #CBD5E1', borderRadius: 7, background: '#fff' }}>{classes.map((classDoc) => <option key={classDoc._id} value={classDoc._id}>{classDoc.name} · {classDoc.section} ({classDoc.gradeLevel})</option>)}</select></label>
+          <label style={{ display: 'grid', gap: 5, fontSize: '0.75rem', color: '#475569' }}>Subject<select value={slotForm.subject} onChange={(event) => setSlotForm({ ...slotForm, subject: event.target.value })} style={{ padding: '9px 10px', border: '1px solid #CBD5E1', borderRadius: 7, background: '#fff' }}><option value="">Select subject</option>{classSubjects.map((subject) => <option key={subject._id} value={subject._id}>{subject.name}</option>)}</select></label>
+          <label style={{ display: 'grid', gap: 5, fontSize: '0.75rem', color: '#475569' }}>Day<select value={slotForm.dayOfWeek} onChange={(event) => setSlotForm({ ...slotForm, dayOfWeek: event.target.value })} style={{ padding: '9px 10px', border: '1px solid #CBD5E1', borderRadius: 7, background: '#fff' }}>{DAYS.map((day) => <option key={day}>{day}</option>)}</select></label>
+          <label style={{ display: 'grid', gap: 5, fontSize: '0.75rem', color: '#475569' }}>Start<select value={slotForm.startTime} onChange={(event) => setSlotForm({ ...slotForm, startTime: event.target.value })} style={{ padding: '9px 10px', border: '1px solid #CBD5E1', borderRadius: 7, background: '#fff' }}>{timeOptions.slice(0, -1).map((time) => <option key={time} value={time}>{time}</option>)}</select></label>
+          <label style={{ display: 'grid', gap: 5, fontSize: '0.75rem', color: '#475569' }}>End<select value={slotForm.endTime} onChange={(event) => setSlotForm({ ...slotForm, endTime: event.target.value })} style={{ padding: '9px 10px', border: '1px solid #CBD5E1', borderRadius: 7, background: '#fff' }}>{timeOptions.slice(1).map((time) => <option key={time} value={time}>{time}</option>)}</select></label>
+          <label style={{ display: 'grid', gap: 5, fontSize: '0.75rem', color: '#475569' }}>Room<input value={slotForm.room} onChange={(event) => setSlotForm({ ...slotForm, room: event.target.value })} placeholder="Optional" style={{ padding: '8px 10px', border: '1px solid #CBD5E1', borderRadius: 7 }} /></label>
+          <button type="button" onClick={saveSlot} disabled={savingSlot || !selectedClass || !slotForm.subject} title="Add schedule" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '9px 12px', border: 0, borderRadius: 7, background: '#8B1A1A', color: '#fff', cursor: savingSlot ? 'wait' : 'pointer', whiteSpace: 'nowrap' }}><Plus size={15} /> {savingSlot ? 'Saving' : 'Add'}</button>
         </div>
-      </Card>
+      </Card>}
 
       {/* Timetable Grid */}
       {loading ? (
@@ -225,79 +180,49 @@ export default function TimetablePage() {
                 </tr>
               </thead>
               <tbody>
-                {PERIODS.map((period, pi) => {
-                  const [start] = period.split('–');
+                {gridRows.map((row) => {
+                  const { startTime, endTime } = row;
                   return (
-                    <tr key={period} style={{ borderBottom: '1px solid var(--gray-50)' }}>
+                    <tr key={startTime} style={{ borderBottom: '1px solid var(--gray-50)' }}>
                       <td style={{ padding: '8px 14px', fontSize: '0.72rem', color: 'var(--gray-400)', fontWeight: 500, whiteSpace: 'nowrap', verticalAlign: 'top', paddingTop: '12px' }}>
-                        {period}
+                        {formatInterval(startTime, endTime)}
                       </td>
                       {DAYS.map(day => {
-                        const slot = grid[day]?.[start];
+                        const slot = grid[day]?.[startTime];
+                        const precedingSlot = timeSlots.find((candidate) => candidate.dayOfWeek === day && timeToMinutes(candidate.startTime) < timeToMinutes(startTime) && timeToMinutes(candidate.endTime) > timeToMinutes(startTime));
+                        if (precedingSlot) return null;
+                        const rowSpan = slot
+                          ? Math.max(1, Math.ceil((timeToMinutes(slot.endTime) - timeToMinutes(slot.startTime)) / INTERVAL_MINUTES))
+                          : 1;
                         return (
-                          <td key={day} style={{ padding: '6px 8px', verticalAlign: 'top', minHeight: '60px' }}>
+                          <td key={day} rowSpan={rowSpan} style={{ padding: '6px 8px', verticalAlign: 'top', height: '24px' }}>
                             {slot ? (
                               <div style={{
                                 background: DAY_COLORS[day],
                                 borderLeft: `3px solid ${DAY_TEXT[day]}`,
                                 borderRadius: '8px',
                                 padding: '8px 10px',
+                                minHeight: `${Math.max(1, rowSpan) * 24 - 12}px`,
+                                boxSizing: 'border-box',
                                 position: 'relative',
-                                cursor: canEdit ? 'pointer' : 'default',
+                                cursor: 'default',
                               }}
-                                onClick={() => {
-                                  if (canEdit) {
-                                    const idx = timeSlots.findIndex(s => s.dayOfWeek === day && s.startTime === start);
-                                    if (idx >= 0) openEdit(slot, idx);
-                                  }
-                                }}
                               >
                                 <div style={{ fontSize: '0.78rem', fontWeight: 700, color: DAY_TEXT[day], marginBottom: '2px', lineHeight: 1.2 }}>
                                   {typeof slot.subject === 'object' ? slot.subject?.name || '—' : '—'}
                                 </div>
                                 <div style={{ fontSize: '0.68rem', color: 'var(--gray-500)' }}>
-                                  {typeof slot.teacher === 'object' ? slot.teacher?.name?.split(' ').pop() || '—' : '—'}
+                                  {slot.startTime}–{slot.endTime}
+                                </div>
+                                <div style={{ fontSize: '0.68rem', color: 'var(--gray-500)' }}>
+                                  {typeof slot.teacher === 'object' ? slot.teacher?.name || '—' : '—'}
                                 </div>
                                 {slot.room && (
                                   <div style={{ fontSize: '0.65rem', color: 'var(--gray-400)', marginTop: '2px' }}>📍 {slot.room}</div>
                                 )}
-                                {canEdit && (
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      const idx = timeSlots.findIndex(s => s.dayOfWeek === day && s.startTime === start);
-                                      if (idx >= 0) handleDeleteSlot(idx);
-                                    }}
-                                    style={{
-                                      position: 'absolute', top: 4, right: 4,
-                                      background: 'rgba(220,38,38,0.1)', border: 'none',
-                                      borderRadius: '4px', padding: '2px 4px',
-                                      cursor: 'pointer', display: 'flex', alignItems: 'center',
-                                    }}
-                                  >
-                                    <Trash2 size={10} color="#DC2626" />
-                                  </button>
-                                )}
                               </div>
                             ) : (
-                              canEdit && (
-                                <button
-                                  onClick={() => {
-                                    setSlotForm({ ...INITIAL_SLOT, dayOfWeek: day, startTime: start, endTime: PERIODS[pi]?.split('–')[1] || start });
-                                    setEditSlotIdx(null);
-                                    setModalOpen(true);
-                                  }}
-                                  style={{
-                                    width: '100%', height: '48px',
-                                    background: 'transparent', border: '1.5px dashed var(--gray-200)',
-                                    borderRadius: '8px', cursor: 'pointer', color: 'var(--gray-300)',
-                                    fontSize: '1.2rem', transition: 'all 0.15s',
-                                    fontFamily: 'var(--font-body)',
-                                  }}
-                                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = '#8B1A1A'; (e.currentTarget as HTMLElement).style.color = '#8B1A1A'; }}
-                                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--gray-200)'; (e.currentTarget as HTMLElement).style.color = 'var(--gray-300)'; }}
-                                >+</button>
-                              )
+                              null
                             )}
                           </td>
                         );
@@ -311,35 +236,11 @@ export default function TimetablePage() {
 
           {timeSlots.length === 0 && (
             <div style={{ textAlign: 'center', padding: '32px', color: 'var(--gray-400)', fontSize: '0.875rem' }}>
-              {canEdit ? 'Click the + buttons to add periods to the timetable' : 'No timetable set for this class yet'}
+              No classes are scheduled.
             </div>
           )}
         </Card>
       )}
-
-      {/* Add/Edit Slot Modal */}
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editSlotIdx !== null ? 'Edit Period' : 'Add Period'}
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setModalOpen(false)}>Cancel</Button>
-            <Button onClick={handleSaveSlot}>
-              {editSlotIdx !== null ? 'Update Period' : 'Add Period'}
-            </Button>
-          </>
-        }
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <Select label="Day *" value={slotForm.dayOfWeek} onChange={e => setSlotForm({ ...slotForm, dayOfWeek: e.target.value })}
-            options={DAYS.map(d => ({ value: d, label: d }))} />
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            <Input label="Start Time" type="time" value={slotForm.startTime} onChange={e => setSlotForm({ ...slotForm, startTime: e.target.value })} />
-            <Input label="End Time" type="time" value={slotForm.endTime} onChange={e => setSlotForm({ ...slotForm, endTime: e.target.value })} />
-          </div>
-          <Select label="Subject *" value={slotForm.subject} onChange={e => setSlotForm({ ...slotForm, subject: e.target.value })} options={subjectOptions} />
-          <Select label="Teacher" value={slotForm.teacher} onChange={e => setSlotForm({ ...slotForm, teacher: e.target.value })} options={teacherOptions} />
-          <Input label="Room / Location" placeholder="e.g. Room 201" value={slotForm.room} onChange={e => setSlotForm({ ...slotForm, room: e.target.value })} />
-        </div>
-      </Modal>
     </div>
   );
 }

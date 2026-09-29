@@ -1,14 +1,19 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Search, Edit2, Trash2, BookOpen } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Plus, Search, Edit2, Trash2, BookOpen, UserPlus } from 'lucide-react';
 import { Card, Button, Badge, DataTable, Pagination, Modal, Input, Select, EmptyState } from '../../components/ui';
-import { subjectsApi, academicYearsApi, usersApi } from '../../utils/api';
+import { subjectsApi, academicYearsApi, usersApi, classesApi } from '../../utils/api';
+import { useAuthStore } from '../../store/authStore';
 import type { Subject, AcademicYear, User, Pagination as PaginationType } from '../../types';
 import toast from 'react-hot-toast';
 
-const GRADE_LEVELS = ['Kinder','Grade 1','Grade 2','Grade 3','Grade 4','Grade 5','Grade 6','Grade 7','Grade 8','Grade 9','Grade 10','Grade 11','Grade 12'].map(g => ({ value: g, label: g }));
+const GRADE_LEVELS = ['Grade 7','Grade 8','Grade 9','Grade 10','Grade 11','Grade 12'].map(g => ({ value: g, label: g }));
 const INITIAL_FORM = { name: '', code: '', description: '', teacher: '', gradeLevel: 'Grade 7', academicYear: '', units: '1', isActive: true };
 
 export default function SubjectsPage() {
+  const { user } = useAuthStore();
+  const navigate = useNavigate();
+  const isStudentView = user?.role === 'student';
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [pagination, setPagination] = useState<PaginationType>({ total: 0, page: 1, pages: 1, limit: 10 });
   const [loading, setLoading] = useState(true);
@@ -22,6 +27,9 @@ export default function SubjectsPage() {
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Subject | null>(null);
   const [ayFilter, setAyFilter] = useState('');
+  const [joinModalOpen, setJoinModalOpen] = useState(false);
+  const [inviteCode, setInviteCode] = useState('');
+  const [joining, setJoining] = useState(false);
 
   useEffect(() => {
     const loadMeta = async () => {
@@ -106,6 +114,24 @@ export default function SubjectsPage() {
     } catch { toast.error('Delete failed'); }
   };
 
+  const handleJoinClass = async () => {
+    if (!inviteCode.trim()) {
+      toast.error('Please enter an invite code.');
+      return;
+    }
+    setJoining(true);
+    try {
+      await classesApi.joinByCode(inviteCode.trim());
+      toast.success('You joined the class successfully.');
+      setJoinModalOpen(false);
+      setInviteCode('');
+      window.location.reload();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Unable to join class.');
+    }
+    setJoining(false);
+  };
+
   const SUBJECT_COLORS = ['#FEE2E2','#DBEAFE','#D1FAE5','#FEF3C7','#EDE9FE','#FCE7F3'];
   const SUBJECT_TEXT = ['#8B1A1A','#2563EB','#059669','#D97706','#7C3AED','#BE185D'];
 
@@ -139,7 +165,7 @@ export default function SubjectsPage() {
       )
     },
     { key: 'isActive', label: 'Status', render: (s: Subject) => <Badge label={s.isActive ? 'Active' : 'Inactive'} color={s.isActive ? 'green' : 'gray'} /> },
-    {
+    ...(isStudentView ? [] : [{
       key: 'actions', label: '', render: (s: Subject) => (
         <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
           <button onClick={(e) => { e.stopPropagation(); openEdit(s); }} style={{ padding: '5px 10px', background: '#EFF6FF', border: 'none', borderRadius: '6px', color: '#2563EB', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '4px', fontFamily: 'var(--font-body)' }}>
@@ -150,17 +176,23 @@ export default function SubjectsPage() {
           </button>
         </div>
       )
-    },
+    }]),
   ];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
-          <h1 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--gray-900)', fontFamily: 'var(--font-display)' }}>Subjects</h1>
-          <p style={{ color: 'var(--gray-500)', fontSize: '0.875rem', marginTop: '2px' }}>Manage subjects, teachers, and assignments</p>
+          <h1 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--gray-900)', fontFamily: 'var(--font-display)' }}>{isStudentView ? 'My Subjects' : 'Subjects'}</h1>
+          <p style={{ color: 'var(--gray-500)', fontSize: '0.875rem', marginTop: '2px' }}>
+            {isStudentView ? 'View your subjects and join a class with your invite code.' : 'Manage subjects, teachers, and assignments'}
+          </p>
         </div>
-        <Button icon={<Plus size={16} />} onClick={openCreate}>Add Subject</Button>
+        {isStudentView ? (
+          <Button icon={<UserPlus size={16} />} onClick={() => setJoinModalOpen(true)}>Join Class</Button>
+        ) : (
+          <Button icon={<Plus size={16} />} onClick={openCreate}>Add Subject</Button>
+        )}
       </div>
 
       <Card padding="16px">
@@ -178,33 +210,49 @@ export default function SubjectsPage() {
       </Card>
 
       <Card>
-        <DataTable columns={columns} data={subjects} loading={loading} emptyMessage="No subjects found" />
+        <DataTable columns={columns} data={subjects} loading={loading} emptyMessage="No subjects found"
+          onRowClick={isStudentView ? (subject) => navigate(`/student/subjects/${subject._id}`) : undefined} />
         <Pagination {...pagination} onChange={setPage} />
       </Card>
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editItem ? 'Edit Subject' : 'Create Subject'}
-        footer={<><Button variant="secondary" onClick={() => setModalOpen(false)}>Cancel</Button><Button loading={saving} onClick={handleSave}>{editItem ? 'Save' : 'Create'}</Button></>}
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            <Input label="Subject Name *" placeholder="e.g. Mathematics" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-            <Input label="Subject Code *" placeholder="e.g. MATH101" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} />
+      {!isStudentView && (
+        <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editItem ? 'Edit Subject' : 'Create Subject'}
+          footer={<><Button variant="secondary" onClick={() => setModalOpen(false)}>Cancel</Button><Button loading={saving} onClick={handleSave}>{editItem ? 'Save' : 'Create'}</Button></>}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <Input label="Subject Name *" placeholder="e.g. Mathematics" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+              <Input label="Subject Code *" placeholder="e.g. MATH101" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} />
+            </div>
+            <Input label="Description" placeholder="Brief description..." value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <Select label="Grade Level *" value={form.gradeLevel} onChange={(e) => setForm({ ...form, gradeLevel: e.target.value })} options={GRADE_LEVELS} />
+              <Input label="Units" type="number" min="1" max="6" value={form.units} onChange={(e) => setForm({ ...form, units: e.target.value })} />
+            </div>
+            <Select label="Academic Year *" value={form.academicYear} onChange={(e) => setForm({ ...form, academicYear: e.target.value })} options={ayOptions.filter(o => o.value)} />
+            <Select label="Assigned Teacher" value={form.teacher} onChange={(e) => setForm({ ...form, teacher: e.target.value })} options={teacherOptions} />
           </div>
-          <Input label="Description" placeholder="Brief description..." value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            <Select label="Grade Level *" value={form.gradeLevel} onChange={(e) => setForm({ ...form, gradeLevel: e.target.value })} options={GRADE_LEVELS} />
-            <Input label="Units" type="number" min="1" max="6" value={form.units} onChange={(e) => setForm({ ...form, units: e.target.value })} />
-          </div>
-          <Select label="Academic Year *" value={form.academicYear} onChange={(e) => setForm({ ...form, academicYear: e.target.value })} options={ayOptions.filter(o => o.value)} />
-          <Select label="Assigned Teacher" value={form.teacher} onChange={(e) => setForm({ ...form, teacher: e.target.value })} options={teacherOptions} />
-        </div>
-      </Modal>
+        </Modal>
+      )}
 
-      <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Confirm Delete" width="400px"
-        footer={<><Button variant="secondary" onClick={() => setDeleteTarget(null)}>Cancel</Button><Button variant="danger" onClick={handleDelete}>Delete</Button></>}
-      >
-        <p style={{ color: 'var(--gray-600)', lineHeight: 1.6 }}>Delete subject <strong>{deleteTarget?.name}</strong>? This cannot be undone.</p>
-      </Modal>
+      {isStudentView && (
+        <Modal open={joinModalOpen} onClose={() => setJoinModalOpen(false)} title="Join a Class" width="420px"
+          footer={<><Button variant="secondary" onClick={() => setJoinModalOpen(false)}>Cancel</Button><Button loading={joining} onClick={handleJoinClass}>Join</Button></>}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <Input label="Invite code" value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} placeholder="Enter class invite code" />
+            <p style={{ margin: 0, fontSize: '0.75rem', color: '#6B7280' }}>Ask your teacher for the invite code to enroll in a class.</p>
+          </div>
+        </Modal>
+      )}
+
+      {!isStudentView && (
+        <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Confirm Delete" width="400px"
+          footer={<><Button variant="secondary" onClick={() => setDeleteTarget(null)}>Cancel</Button><Button variant="danger" onClick={handleDelete}>Delete</Button></>}
+        >
+          <p style={{ color: 'var(--gray-600)', lineHeight: 1.6 }}>Delete subject <strong>{deleteTarget?.name}</strong>? This cannot be undone.</p>
+        </Modal>
+      )}
     </div>
   );
 }

@@ -1,17 +1,46 @@
 import express from "express";
 import { protect, authorize } from "../middleware/auth";
 import {
-  createExam, getExams, getExamById, updateExam, deleteExam, publishExam, closeExam,
+  createExam, getExams, getExamById, startExam, updateExam, deleteExam, publishExam, closeExam,
   submitExam, getSubmissions, getMySubmissions, gradeSubmission,
   createAnnouncement, getAnnouncements, updateAnnouncement, deleteAnnouncement,
   getDashboardStats,
   getTimetable, createOrUpdateTimetable,
   generateReportCard, getStudentReportCards, getAllReportCards,
+  createReportCardRequest, getReportCardRequests, sendReportCardRequest,
   getAnalytics,
 } from "../controllers/combined";
-import { createClass, getClasses, getClassById, updateClass, deleteClass, addStudentToClass } from "../controllers/class";
-import { createSubject, getSubjects, getSubjectById, updateSubject, deleteSubject } from "../controllers/subject";
+import {
+  createClass,
+  getClasses,
+  getClassById,
+  updateClass,
+  deleteClass,
+  addStudentToClass,
+  removeStudentFromClass,
+  addCoTeacherToClass,
+  removeCoTeacherFromClass,
+  createClassRequest,
+  getClassRequests,
+  approveClassRequest,
+  rejectClassRequest,
+  joinClassByCode,
+} from "../controllers/class";
+import { createSubject, getSubjects, getSubjectById, getSubjectWorkspace, createSubjectPost, updateSubject, deleteSubject } from "../controllers/subject";
 import { createAcademicYear, getAllAcademicYears } from "../controllers/academicYear";
+import { getNotifications, markNotificationRead, markAllNotificationsRead } from "../controllers/notifications";
+import { downloadAnnouncementAttachment } from "../controllers/attachment";
+import { parseSubjectAttachments } from "../middleware/upload";
+import {
+  createComment,
+  getComments,
+  updateComment,
+  deleteComment,
+  addReaction,
+  removeReaction,
+  changeReaction,
+  getReactions,
+} from "../controllers/announcements";
 
 const router = express.Router();
 
@@ -44,21 +73,33 @@ router.patch("/academicYear/:id/current", protect, authorize(["admin"]), async (
 
 // ── Classes ───────────────────────────────────────────────────────────────
 router.get("/classes", protect, getClasses);
+router.get("/classes/requests", protect, getClassRequests);
 router.get("/classes/:id", protect, getClassById);
 router.post("/classes", protect, authorize(["admin"]), createClass);
+router.post("/classes/request", protect, authorize(["teacher"]), createClassRequest);
+router.patch("/classes/requests/:id/approve", protect, authorize(["admin"]), approveClassRequest);
+router.patch("/classes/requests/:id/reject", protect, authorize(["admin"]), rejectClassRequest);
+router.post("/classes/join", protect, authorize(["student"]), joinClassByCode);
 router.put("/classes/:id", protect, authorize(["admin"]), updateClass);
 router.delete("/classes/:id", protect, authorize(["admin"]), deleteClass);
 router.post("/classes/:id/students", protect, authorize(["admin"]), addStudentToClass);
+router.delete("/classes/:id/students/:studentId", protect, authorize(["admin", "teacher"]), removeStudentFromClass);
+router.post("/classes/:id/co-teachers", protect, authorize(["admin", "teacher"]), addCoTeacherToClass);
+router.delete("/classes/:id/co-teachers/:teacherId", protect, authorize(["admin", "teacher"]), removeCoTeacherFromClass);
 
 // ── Subjects ─────────────────────────────────────────────────────────────
 router.get("/subjects", protect, getSubjects);
+router.get("/subjects/:id/workspace", protect, getSubjectWorkspace);
+router.post("/subjects/:id/posts", protect, authorize(["teacher"]), parseSubjectAttachments, createSubjectPost);
 router.get("/subjects/:id", protect, getSubjectById);
+router.get("/posts/:postId/attachments/:attachmentId", protect, downloadAnnouncementAttachment);
 router.post("/subjects", protect, authorize(["admin", "teacher"]), createSubject);
 router.put("/subjects/:id", protect, authorize(["admin", "teacher"]), updateSubject);
 router.delete("/subjects/:id", protect, authorize(["admin"]), deleteSubject);
 
 // ── Exams ─────────────────────────────────────────────────────────────────
 router.get("/exams", protect, getExams);
+router.post("/exams/:id/start", protect, authorize(["student"]), startExam);
 router.get("/exams/:id", protect, getExamById);
 router.post("/exams", protect, authorize(["admin", "teacher"]), createExam);
 router.put("/exams/:id", protect, authorize(["admin", "teacher"]), updateExam);
@@ -78,9 +119,26 @@ router.post("/announcements", protect, authorize(["admin", "teacher"]), createAn
 router.put("/announcements/:id", protect, authorize(["admin", "teacher"]), updateAnnouncement);
 router.delete("/announcements/:id", protect, authorize(["admin"]), deleteAnnouncement);
 
+// ── Comments on Announcements ────────────────────────────────────────────
+router.get("/announcements/:announcementId/comments", protect, getComments);
+router.post("/announcements/:announcementId/comments", protect, createComment);
+router.put("/comments/:commentId", protect, updateComment);
+router.delete("/comments/:commentId", protect, deleteComment);
+
+// ── Reactions on Announcements ───────────────────────────────────────────
+router.get("/announcements/:announcementId/reactions", protect, getReactions);
+router.post("/announcements/:announcementId/reactions", protect, addReaction);
+router.delete("/announcements/:announcementId/reactions", protect, removeReaction);
+router.patch("/announcements/:announcementId/reactions", protect, changeReaction);
+
 // ── Dashboard ─────────────────────────────────────────────────────────────
 router.get("/dashboard/stats", protect, authorize(["admin"]), getDashboardStats);
 router.get("/analytics", protect, authorize(["admin"]), getAnalytics);
+
+// ── Notifications ────────────────────────────────────────────────────────
+router.get("/notifications", protect, getNotifications);
+router.patch("/notifications/:id/read", protect, markNotificationRead);
+router.patch("/notifications/read-all", protect, markAllNotificationsRead);
 
 // ── Timetable ─────────────────────────────────────────────────────────────
 router.get("/timetable/:classId", protect, getTimetable);
@@ -90,6 +148,9 @@ router.put("/timetable/:id", protect, authorize(["admin", "teacher"]), createOrU
 // ── Report Cards ──────────────────────────────────────────────────────────
 router.get("/reportcards", protect, authorize(["admin", "teacher"]), getAllReportCards);
 router.get("/reportcards/student/:studentId", protect, getStudentReportCards);
-router.post("/reportcards/generate", protect, authorize(["admin", "teacher"]), generateReportCard);
+router.get("/reportcards/requests", protect, getReportCardRequests);
+router.post("/reportcards/requests", protect, authorize(["teacher"]), createReportCardRequest);
+router.post("/reportcards/generate", protect, authorize(["admin"]), generateReportCard);
+router.patch("/reportcards/requests/:id/send", protect, authorize(["admin"]), sendReportCardRequest);
 
 export default router;

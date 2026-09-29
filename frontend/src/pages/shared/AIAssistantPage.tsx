@@ -2,13 +2,15 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Send, Bot, User, Sparkles, RefreshCw, BookOpen, ClipboardList, Calendar } from 'lucide-react';
 import { Card, Button } from '../../components/ui';
 import { useAuthStore } from '../../store/authStore';
+import { aiApi, subjectsApi } from '../../utils/api';
+import toast from 'react-hot-toast';
 import type { ChatMessage } from '../../types';
 
-const SUGGESTED_PROMPTS_TEACHER = [
-  { icon: <ClipboardList size={14} />, text: 'Create a 10-question quiz on photosynthesis for Grade 8', label: 'Exam Maker' },
-  { icon: <BookOpen size={14} />, text: 'Give me a lesson plan for teaching quadratic equations', label: 'Lesson Plan' },
-  { icon: <Calendar size={14} />, text: 'Remind me of key academic year deadlines and milestones', label: 'Reminders' },
-  { icon: <Sparkles size={14} />, text: 'Generate grading rubric for an essay on Philippine history', label: 'Rubric' },
+const getTeacherSuggestions = (subjectName = 'your subject') => [
+  { icon: <ClipboardList size={14} />, text: `Create a 10-question quiz for ${subjectName}`, label: 'Exam Maker' },
+  { icon: <BookOpen size={14} />, text: `Give me a lesson plan for ${subjectName}`, label: 'Lesson Plan' },
+  { icon: <Calendar size={14} />, text: `Suggest key academic milestones for ${subjectName}`, label: 'Reminders' },
+  { icon: <Sparkles size={14} />, text: `Generate a grading rubric for a ${subjectName} essay`, label: 'Rubric' },
 ];
 
 const SUGGESTED_PROMPTS_STUDENT = [
@@ -17,6 +19,8 @@ const SUGGESTED_PROMPTS_STUDENT = [
   { icon: <Calendar size={14} />, text: 'What should I study for my upcoming Science quiz?', label: 'Exam Prep' },
   { icon: <Sparkles size={14} />, text: 'Summarize the key events of the Philippine Revolution', label: 'Summary' },
 ];
+
+const getChatStorageKey = (userId: string, kind: 'messages' | 'draft') => `icsqc-ai-${kind}-${userId}`;
 
 function formatMessage(text: string) {
   const lines = text.split('\n');
@@ -36,18 +40,32 @@ function formatMessage(text: string) {
 export default function AIAssistantPage() {
   const { user } = useAuthStore();
   const isTeacher = user?.role === 'teacher';
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: '0',
-      role: 'assistant',
-      content: isTeacher
-        ? `Hello, ${user?.name?.split(' ')[0]}! 👋 I'm your ICSQC AI Teaching Assistant. I can help you:\n\n- **Create exams and quizzes** — generate questions for any subject\n- **Build lesson plans** — structured content for your classes\n- **Assignment reminders** — keep track of deadlines\n- **Academic year planning** — semester milestones and scheduling\n\nWhat would you like help with today?`
-        : `Hi, ${user?.name?.split(' ')[0]}! 📚 I'm your ICSQC AI Study Assistant. I can help you:\n\n- **Review lessons** — explain concepts in any subject\n- **Exam preparation** — practice questions and summaries\n- **Assignment help** — guidance and explanations\n- **Study tips** — effective strategies for learning\n\nWhat subject or topic would you like to explore?`,
-      timestamp: new Date(),
+  const userId = user?._id || 'anonymous';
+  const welcomeMessage: ChatMessage = {
+    id: '0',
+    role: 'assistant',
+    content: isTeacher
+      ? `Hello, ${user?.name?.split(' ')[0]}! 👋 I'm Ezra, your ICSQC teaching companion. I can help you:\n\n- **Create exams and quizzes** — generate questions for any subject\n- **Build lesson plans** — structured content for your classes\n- **Assignment reminders** — keep track of deadlines\n- **Academic year planning** — semester milestones and scheduling\n\nWhat would you like help with today?`
+      : `Hi! I'm Ezra 👋 Your AI study buddy for ICSQC. Ask me about your subjects, lessons, assignments, or anything you need help reviewing.`,
+    timestamp: new Date(),
+  };
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    try {
+      const saved = localStorage.getItem(getChatStorageKey(userId, 'messages'));
+      if (saved) {
+        const parsed = JSON.parse(saved) as Array<Omit<ChatMessage, 'timestamp'> & { timestamp: string }>;
+        return parsed.map(message => ({ ...message, timestamp: new Date(message.timestamp) }));
+      }
+    } catch {
+      localStorage.removeItem(getChatStorageKey(userId, 'messages'));
     }
-  ]);
-  const [input, setInput] = useState('');
+    return [welcomeMessage];
+  });
+  const [input, setInput] = useState(() => localStorage.getItem(getChatStorageKey(userId, 'draft')) || '');
   const [loading, setLoading] = useState(false);
+  const [accessLoading, setAccessLoading] = useState(true);
+  const [accessDenied, setAccessDenied] = useState(false);
+  const [teacherSubject, setTeacherSubject] = useState('your subject');
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -55,7 +73,44 @@ export default function AIAssistantPage() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  useEffect(() => {
+    localStorage.setItem(getChatStorageKey(userId, 'messages'), JSON.stringify(messages));
+  }, [messages, userId]);
+
+  useEffect(() => {
+    if (input) localStorage.setItem(getChatStorageKey(userId, 'draft'), input);
+    else localStorage.removeItem(getChatStorageKey(userId, 'draft'));
+  }, [input, userId]);
+
+  useEffect(() => {
+    let mounted = true;
+    aiApi.getAccess()
+      .then(response => {
+        if (mounted) setAccessDenied(response.data?.allowed === false);
+      })
+      .catch(error => {
+        if (mounted) setAccessDenied(error.response?.status === 403 || error.response?.status === 503);
+      })
+      .finally(() => {
+        if (mounted) setAccessLoading(false);
+      });
+    return () => { mounted = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!isTeacher) return;
+    subjectsApi.getAll({ limit: 100 })
+      .then(response => {
+        const subjectNames = (response.data?.subjects || [])
+          .map((subject: { name?: string }) => subject.name)
+          .filter(Boolean);
+        if (subjectNames.length > 0) setTeacherSubject(subjectNames.join(', '));
+      })
+      .catch(() => undefined);
+  }, [isTeacher]);
+
   const sendMessage = async (text?: string) => {
+    if (accessLoading || accessDenied) return;
     const messageText = text || input.trim();
     if (!messageText || loading) return;
 
@@ -71,28 +126,18 @@ export default function AIAssistantPage() {
     setLoading(true);
 
     try {
-      const systemPrompt = isTeacher
-        ? `You are an expert AI assistant for teachers at International Christian School of Quezon City (ICSQC), Philippines. You help with: creating exam questions (multiple choice, true/false, short answer, essay), lesson plans aligned with K-12 curriculum, assignment rubrics, academic year scheduling, and teaching strategies. When creating exams, format questions clearly with options labeled A-D and indicate the correct answer. Always be educational, professional, and helpful. Provide structured, detailed responses.`
-        : `You are an expert AI study assistant for students at International Christian School of Quezon City (ICSQC), Philippines. You help students understand lessons, prepare for exams, review concepts from their K-12 curriculum subjects (Math, Science, English, Filipino, AP/Social Studies, Values Education, MAPEH, TLE/TVL). Explain concepts clearly with examples. Provide encouragement and effective study strategies. Be friendly, patient, and educational.`;
+      // Get conversation history (last 10 messages excluding system message)
+      const history = messages
+        .slice(-10)
+        .filter(m => m.id !== '0')
+        .map(m => ({
+          role: m.role as 'user' | 'assistant',
+          content: m.content,
+        }));
 
-      const history = messages.slice(-8).map(m => ({
-        role: m.role as 'user' | 'assistant',
-        content: m.content,
-      }));
-
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 1500,
-          system: systemPrompt,
-          messages: [...history, { role: 'user', content: messageText }],
-        }),
-      });
-
-      const data = await response.json();
-      const assistantText = data.content?.[0]?.text || 'Sorry, I could not generate a response. Please try again.';
+      // Call backend AI API
+      const response = await aiApi.chat(messageText, history);
+      const assistantText = response.data?.message || 'Sorry, I could not generate a response. Please try again.';
 
       const assistantMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
@@ -101,14 +146,17 @@ export default function AIAssistantPage() {
         timestamp: new Date(),
       };
       setMessages(prev => [...prev, assistantMsg]);
-    } catch (err) {
+    } catch (err: any) {
+      console.error('AI API Error:', err);
+      const errorMessage = err.response?.data?.message;
       const errMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: '⚠️ Unable to connect to the AI service. Please check your connection and try again.',
+        content: errorMessage || 'Unable to connect to the AI service. Please check your connection and try again.',
         timestamp: new Date(),
       };
       setMessages(prev => [...prev, errMsg]);
+      toast.error(errorMessage || 'Failed to get AI response');
     }
     setLoading(false);
   };
@@ -127,9 +175,18 @@ export default function AIAssistantPage() {
       content: 'Chat cleared! How can I help you?',
       timestamp: new Date(),
     }]);
+    setInput('');
   };
 
-  const suggestions = isTeacher ? SUGGESTED_PROMPTS_TEACHER : SUGGESTED_PROMPTS_STUDENT;
+  if (accessLoading) {
+    return <Card padding="48px"><p style={{ margin: 0, textAlign: 'center', color: 'var(--gray-500)' }}>Checking AI access...</p></Card>;
+  }
+
+  if (accessDenied) {
+    return <Card padding="48px"><div style={{ textAlign: 'center' }}><h2 style={{ margin: '0 0 8px', color: 'var(--gray-900)' }}>Ezra is unavailable</h2><p style={{ margin: 0, color: 'var(--gray-500)' }}>Ezra isn't available while you're answering an active assessment. Please finish your assessment first.</p></div></Card>;
+  }
+
+  const suggestions = isTeacher ? getTeacherSuggestions(teacherSubject) : SUGGESTED_PROMPTS_STUDENT;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', height: 'calc(100vh - 128px)' }}>
@@ -137,7 +194,7 @@ export default function AIAssistantPage() {
         <div>
           <h1 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--gray-900)', fontFamily: 'var(--font-display)', display: 'flex', alignItems: 'center', gap: '10px' }}>
             <Sparkles size={22} color="#C9A84C" />
-            {isTeacher ? 'AI Teaching Assistant' : 'AI Study Assistant'}
+            Ezra
           </h1>
           <p style={{ color: 'var(--gray-500)', fontSize: '0.875rem', marginTop: '2px' }}>
             {isTeacher ? 'Create exams, lessons, and manage your teaching schedule' : 'Review lessons, prepare for exams, and get study help'}

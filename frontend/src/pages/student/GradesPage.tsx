@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Award, TrendingUp, BookOpen, CheckCircle2 } from 'lucide-react';
-import { Card, Badge } from '../../components/ui';
+import { Award, TrendingUp, BookOpen, CheckCircle2, ArrowLeft } from 'lucide-react';
+import { Card, Badge, Button } from '../../components/ui';
 import { submissionsApi, reportCardsApi, academicYearsApi } from '../../utils/api';
 import { useAuthStore } from '../../store/authStore';
 import type { Submission } from '../../types';
@@ -262,6 +262,9 @@ export default function StudentGradesPage() {
                   ))}
                 </tbody>
               </table>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px' }}>
+                <Button variant="secondary" icon={<ArrowLeft size={15} />} onClick={() => setSelectedCard(null)}>Return to Grades</Button>
+              </div>
             </div>
           </div>
         </div>

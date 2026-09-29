@@ -9,6 +9,7 @@ export interface IAnswer {
 
 export interface ISubmission extends Document {
   exam: mongoose.Types.ObjectId;
+  attempt?: mongoose.Types.ObjectId;
   student: mongoose.Types.ObjectId;
   answers: IAnswer[];
   score: number;
@@ -21,6 +22,9 @@ export interface ISubmission extends Document {
   status: "submitted" | "graded" | "pending";
   feedback?: string;
   timeSpent?: number; // in seconds
+  startedAt?: Date;
+  deadline?: Date;
+  questionOrder?: number[];
 }
 
 const answerSchema = new Schema<IAnswer>({
@@ -33,6 +37,7 @@ const answerSchema = new Schema<IAnswer>({
 const submissionSchema = new Schema<ISubmission>(
   {
     exam: { type: Schema.Types.ObjectId, ref: "Exam", required: true },
+    attempt: { type: Schema.Types.ObjectId, ref: "ExamAttempt" },
     student: { type: Schema.Types.ObjectId, ref: "User", required: true },
     answers: [answerSchema],
     score: { type: Number, default: 0 },
@@ -45,6 +50,9 @@ const submissionSchema = new Schema<ISubmission>(
     status: { type: String, enum: ["submitted", "graded", "pending"], default: "submitted" },
     feedback: { type: String },
     timeSpent: { type: Number },
+    startedAt: { type: Date },
+    deadline: { type: Date },
+    questionOrder: [{ type: Number }],
   },
   { timestamps: true }
 );

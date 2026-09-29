@@ -3,6 +3,7 @@ import { Outlet, useNavigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
 import { useAuthStore } from '../../store/authStore';
+import FloatingMessenger from './FloatingMessenger';
 
 interface DashboardLayoutProps {
   requiredRole?: string | string[];
@@ -17,9 +18,7 @@ export default function DashboardLayout({ requiredRole, title, subtitle }: Dashb
 
   useEffect(() => {
     const init = async () => {
-      if (!isAuthenticated) {
-        await fetchProfile();
-      }
+      await fetchProfile();
       setChecking(false);
     };
     init();
@@ -42,7 +41,7 @@ export default function DashboardLayout({ requiredRole, title, subtitle }: Dashb
 
   if (checking) {
     return (
-      <div style={{
+      <div className="app-main" style={{
         minHeight: '100vh', display: 'flex',
         alignItems: 'center', justifyContent: 'center',
         background: '#F9FAFB',
@@ -66,7 +65,7 @@ export default function DashboardLayout({ requiredRole, title, subtitle }: Dashb
   if (!isAuthenticated) return null;
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: '#F9FAFB' }}>
+    <div style={{ display: 'flex', minHeight: '100vh', background: '#F1F5F9' }}>
       <Sidebar />
       <div style={{
         flex: 1,
@@ -76,7 +75,7 @@ export default function DashboardLayout({ requiredRole, title, subtitle }: Dashb
         transition: 'margin-left 0.3s',
       }}>
         <Topbar title={title} subtitle={subtitle} />
-        <main style={{
+        <main className="app-content" style={{
           flex: 1,
           padding: '28px',
           overflowY: 'auto',
@@ -85,6 +84,7 @@ export default function DashboardLayout({ requiredRole, title, subtitle }: Dashb
           <Outlet />
         </main>
       </div>
+      <FloatingMessenger />
       <style>{`
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(6px); }

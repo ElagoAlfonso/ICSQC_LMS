@@ -12,7 +12,10 @@ export type userRoles = "admin" | "teacher" | "student" ;
 export interface IUser extends Document {
   name: string;
   email: string;
+  lrn?: string;
   password: string;
+  resetPasswordToken?: string;
+  resetPasswordExpire?: Date;
   role: userRoles;
   isActive: boolean;
   studentClass?: string | null;
@@ -24,7 +27,10 @@ const userSchema: Schema<IUser> = new Schema(
   {
     name: { type: String, required: true },
     email: { type: String, required: true },
+    lrn: { type: String, trim: true, sparse: true },
     password: { type: String, required: true },
+    resetPasswordToken: { type: String, select: false },
+    resetPasswordExpire: { type: Date, select: false },
     role: {
       type: String,
       enum: Object.values(UserRole),
@@ -52,7 +58,6 @@ userSchema.methods.matchPassword = async function (enteredPassword: string) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
-<<<<<<< HEAD
 // Transform to exclude password when converting to JSON
 userSchema.methods.toJSON = function () {
   const userObject = this.toObject();
@@ -60,7 +65,5 @@ userSchema.methods.toJSON = function () {
   return userObject;
 };
 
-=======
->>>>>>> a77495f626dbe90aaff470650f7e47812e2b1d22
 const User = mongoose.model<IUser>("User", userSchema);
 export default User;

@@ -3,6 +3,14 @@ import { persist } from 'zustand/middleware';
 import type { User } from '../types';
 import { authApi } from '../utils/api';
 
+const normalizeUser = (user: Partial<User> | null | undefined) => {
+  if (!user) return null;
+  return {
+    ...user,
+    teacherSubject: user.teacherSubject ?? (user as any).teacherSubjects ?? [],
+  } as User;
+};
+
 interface AuthState {
   user: User | null;
   isLoading: boolean;
@@ -24,7 +32,7 @@ export const useAuthStore = create<AuthState>()(
         set({ isLoading: true });
         try {
           const res = await authApi.login(email, password);
-          const userData = res.data;
+          const userData = normalizeUser(res.data);
           set({ user: userData, isAuthenticated: true, isLoading: false });
         } catch (err) {
           set({ isLoading: false });
@@ -42,13 +50,14 @@ export const useAuthStore = create<AuthState>()(
       fetchProfile: async () => {
         try {
           const res = await authApi.getProfile();
-          set({ user: res.data.user, isAuthenticated: true });
+          const userData = normalizeUser(res.data.user ?? res.data);
+          set({ user: userData, isAuthenticated: true });
         } catch {
           set({ user: null, isAuthenticated: false });
         }
       },
 
-      setUser: (user) => set({ user, isAuthenticated: !!user }),
+      setUser: (user) => set({ user: normalizeUser(user), isAuthenticated: !!user }),
     }),
     {
       name: 'icsqc-auth',

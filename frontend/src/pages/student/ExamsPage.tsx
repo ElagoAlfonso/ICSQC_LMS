@@ -6,6 +6,7 @@ import type { Exam, Question } from '../../types';
 import { format, isPast } from 'date-fns';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
+import { io } from 'socket.io-client';
 
 export default function StudentExamsPage() {
   const navigate = useNavigate();
@@ -15,6 +16,9 @@ export default function StudentExamsPage() {
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [currentQ, setCurrentQ] = useState(0);
   const [timeLeft, setTimeLeft] = useState(0);
+  const [attemptId, setAttemptId] = useState<string | null>(null);
+  const [deadline, setDeadline] = useState<number | null>(null);
+  const [clockOffset, setClockOffset] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [examDone, setExamDone] = useState(false);
   const [result, setResult] = useState<any>(null);
@@ -31,33 +35,68 @@ export default function StudentExamsPage() {
     };
     load();
   }, []);
+  useEffect(() => {
+    const socket = io(import.meta.env.VITE_REALTIME_URL || window.location.origin, { withCredentials: true, transports: ['websocket', 'polling'] });
+    const refresh = () => {
+      void examsApi.getAll({ status: 'published' }).then((response) => setExams(response.data.exams || []));
+    };
+    socket.on('academic:update', refresh);
+    return () => { socket.off('academic:update', refresh); socket.disconnect(); };
+  }, []);
 
   const startExam = async (exam: Exam) => {
     try {
-      const res = await examsApi.getById(exam._id);
-      setActiveExam(res.data);
-      setAnswers({});
+      const res = await examsApi.start(exam._id);
+      const startedExam = res.data.exam as Exam;
+      const serverNow = Number(res.data.serverNow || Date.now());
+      const serverDeadline = new Date(res.data.attempt.deadline).getTime();
+      setActiveExam(startedExam);
+      setAttemptId(res.data.attempt._id);
+      setDeadline(serverDeadline);
+      setClockOffset(serverNow - Date.now());
+      localStorage.setItem(`exam-attempt:${exam._id}`, res.data.attempt._id);
+      try {
+        setAnswers(JSON.parse(localStorage.getItem(`exam-answers:${res.data.attempt._id}`) || '{}'));
+      } catch {
+        setAnswers({});
+      }
       setCurrentQ(0);
-      setTimeLeft(res.data.duration * 60);
+      setTimeLeft(Math.max(0, Math.ceil((serverDeadline - serverNow) / 1000)));
       setExamDone(false);
       setResult(null);
       startTimeRef.current = Date.now();
-    } catch { toast.error('Failed to load exam'); }
+    } catch (error: any) { toast.error(error.response?.data?.message || 'Failed to start exam'); }
   };
 
   useEffect(() => {
-    if (!activeExam || examDone) return;
-    timerRef.current = setInterval(() => {
-      setTimeLeft(t => {
-        if (t <= 1) { clearInterval(timerRef.current); handleSubmit(true); return 0; }
-        return t - 1;
-      });
-    }, 1000);
+    if (!activeExam || examDone || deadline === null) return;
+    const tick = () => {
+      const remaining = deadline - (Date.now() + clockOffset);
+      setTimeLeft(Math.max(0, Math.ceil(remaining / 1000)));
+      if (remaining <= 0) {
+        clearInterval(timerRef.current);
+        void handleSubmit(true);
+      }
+    };
+    tick();
+    timerRef.current = setInterval(tick, 250);
     return () => clearInterval(timerRef.current);
-  }, [activeExam, examDone]);
+  }, [activeExam, examDone, deadline, clockOffset]);
+
+  useEffect(() => {
+    if (activeExam || exams.length === 0) return;
+    const resumableExam = exams.find((exam) => localStorage.getItem(`exam-attempt:${exam._id}`));
+    if (resumableExam) void startExam(resumableExam);
+  }, [exams, activeExam]);
+
+  useEffect(() => {
+    if (attemptId && activeExam && !examDone) {
+      localStorage.setItem(`exam-answers:${attemptId}`, JSON.stringify(answers));
+    }
+  }, [answers, attemptId, activeExam, examDone]);
 
   const handleSubmit = async (autoSubmit = false) => {
-    if (!activeExam) return;
+    if (!activeExam || !attemptId) return;
     if (!autoSubmit) {
       const unanswered = activeExam.questions.length - Object.keys(answers).length;
       if (unanswered > 0 && !window.confirm(`You have ${unanswered} unanswered question(s). Submit anyway?`)) return;
@@ -70,13 +109,21 @@ export default function StudentExamsPage() {
         answer: answers[idx] || '',
       }));
       const timeSpent = Math.round((Date.now() - startTimeRef.current) / 1000);
-      const res = await submissionsApi.submit(activeExam._id, answerArray);
+      const res = await submissionsApi.submit(activeExam._id, attemptId, answerArray, timeSpent);
       setResult(res.data);
       setExamDone(true);
+      setExams(currentExams => currentExams.filter(exam => exam._id !== activeExam._id));
+      localStorage.removeItem(`exam-attempt:${activeExam._id}`);
+      localStorage.removeItem(`exam-answers:${attemptId}`);
       toast.success('Exam submitted!');
     } catch (err: any) {
       const msg = err.response?.data?.message || 'Submission failed';
       toast.error(msg);
+      if (err.response?.status === 403 && /expired|no longer active/i.test(msg)) {
+        setActiveExam(null);
+        setAttemptId(null);
+        setDeadline(null);
+      }
       if (msg === 'Already submitted') setExamDone(true);
     }
     setSubmitting(false);
@@ -87,6 +134,16 @@ export default function StudentExamsPage() {
     const sec = s % 60;
     return `${m}:${sec.toString().padStart(2, '0')}`;
   };
+
+  const examsBySubject = exams.reduce<Record<string, { name: string; exams: Exam[] }>>((groups, exam) => {
+    const subject = typeof exam.subject === 'object' ? exam.subject : null;
+    const subjectId = subject?._id || String(exam.subject);
+    const subjectName = subject?.name || 'Other subjects';
+    groups[subjectId] ||= { name: subjectName, exams: [] };
+    groups[subjectId].exams.push(exam);
+    return groups;
+  }, {});
+  const sortedSubjectGroups = Object.entries(examsBySubject).sort(([, first], [, second]) => first.name.localeCompare(second.name));
 
   // Exam done screen
   if (examDone && result) {
@@ -116,7 +173,7 @@ export default function StudentExamsPage() {
                 </div>
               ))}
             </div>
-            <Button onClick={() => { setActiveExam(null); setExamDone(false); setResult(null); }}>
+            <Button onClick={() => { setActiveExam(null); setAttemptId(null); setDeadline(null); setExamDone(false); setResult(null); }}>
               Back to Exams
             </Button>
           </div>
@@ -267,8 +324,8 @@ export default function StudentExamsPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       <div>
-        <h1 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--gray-900)', fontFamily: 'var(--font-display)' }}>My Exams</h1>
-        <p style={{ color: 'var(--gray-500)', fontSize: '0.875rem', marginTop: '2px' }}>Available exams and assessments for you</p>
+        <h1 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--gray-900)', fontFamily: 'var(--font-display)' }}>Exams &amp; Assessments</h1>
+        <p style={{ color: 'var(--gray-500)', fontSize: '0.875rem', marginTop: '2px' }}>Published exams and assessments waiting for you</p>
       </div>
 
       {loading ? (
@@ -285,9 +342,14 @@ export default function StudentExamsPage() {
           </div>
         </Card>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
-          {exams.map(exam => {
-            const expired = isPast(new Date(exam.endDate));
+        <div style={{ display: 'grid', gap: 22 }}>
+          {sortedSubjectGroups.map(([subjectId, group]) => <section key={subjectId} style={{ display: 'grid', gap: 12 }}>
+            <h2 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#374151' }}>{group.name}</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
+          {group.exams.map(exam => {
+            const examEndDate = new Date(exam.endDate);
+            const examEndDateValue = /^\d{4}-\d{2}-\d{2}$/.test(exam.endDate) ? new Date(exam.endDate + 'T23:59:59') : examEndDate;
+            const expired = isPast(examEndDateValue);
             return (
               <div key={exam._id} style={{ background: '#fff', borderRadius: '14px', border: '1px solid var(--gray-100)', padding: '20px 24px', boxShadow: 'var(--shadow-card)', display: 'flex', flexDirection: 'column', gap: '14px' }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px' }}>
@@ -297,7 +359,7 @@ export default function StudentExamsPage() {
                       {typeof exam.subject === 'object' ? (exam.subject as any).name : ''}
                     </p>
                   </div>
-                  <Badge label={exam.examType} color="blue" />
+                  <Badge label={exam.examType === 'formative' ? 'Formative Assessment' : exam.examType} color="blue" />
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
@@ -316,7 +378,7 @@ export default function StudentExamsPage() {
 
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '4px' }}>
                   <span style={{ fontSize: '0.72rem', color: expired ? '#DC2626' : 'var(--gray-400)' }}>
-                    {expired ? '⏰ Expired' : `Due: ${format(new Date(exam.endDate), 'MMM d, h:mm a')}`}
+                    {expired ? '⏰ Expired' : `Due: ${format(examEndDateValue, 'MMM d, h:mm a')}`}
                   </span>
                   <button onClick={() => startExam(exam)} disabled={expired}
                     style={{
@@ -334,6 +396,8 @@ export default function StudentExamsPage() {
               </div>
             );
           })}
+            </div>
+          </section>)}
         </div>
       )}
     </div>

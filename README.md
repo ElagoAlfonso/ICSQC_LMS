@@ -22,7 +22,7 @@ ICSQC-LMS is a full-stack School Management System (SMS) + Learning Management S
 | **Database**| MongoDB (Mongoose)                |
 | **Auth**    | JWT (HttpOnly Cookies, 30-day)    |
 | **Security**| Helmet, bcryptjs, CORS            |
-| **AI**      | Anthropic Claude API (in-browser) |
+| **AI**      | Google Gemini API (server-side) |
 
 ---
 
@@ -81,8 +81,9 @@ cd backend
 PORT=5000
 NODE_ENV=development
 CLIENT_URL=http://localhost:5173
-MONGO_URL=<your-mongodb-connection-string>
+MONGODB_URI=<your-mongodb-connection-string>
 JWT_SECRET=your_super_secret_jwt_key_here
+GEMINI_API_KEY=<your-google-gemini-api-key>
 
 # Install & run (using Bun)
 bun install
@@ -101,6 +102,48 @@ npm run dev
 ```
 
 Visit: **http://localhost:5173**
+
+### Vercel Deployment
+
+Deploy the `frontend` directory as a Vercel project. Set these Vercel environment variables:
+
+```env
+VITE_API_URL=https://your-backend.example.com/api
+VITE_REALTIME_URL=https://your-backend.example.com
+```
+
+`VITE_API_URL` must include `/api` and must not end with `/`. The frontend includes a Vercel SPA rewrite so direct links to dashboard routes continue to work.
+
+Deploy the `backend` as a separate long-running Node.js service on Render, Railway, Fly.io, or a similar host. This project uses Socket.IO for messaging and live updates, which requires a persistent server and is not supported by Vercel Functions. Set the backend `CLIENT_URL` to the deployed Vercel URL and configure all backend secrets in the hosting provider rather than committing `.env` files.
+
+For production Google Calendar OAuth, register the backend URL as the redirect URI:
+
+```env
+GOOGLE_REDIRECT_URI=https://your-backend.example.com/api/google/callback
+```
+
+The backend must also allow the exact Vercel frontend origin through `CLIENT_URL`. After deployment, test login, API requests, Socket.IO messaging, and the Google Calendar callback separately.
+
+### Google Meet Setup
+
+Google Meet creation uses the official Google Calendar API. The backend creates a Calendar event with `conferenceData`, and Google returns the real Meet URL. The frontend never receives OAuth client secrets or refresh tokens.
+
+1. In Google Cloud Console, create/select a project, enable **Google Calendar API**, configure the OAuth consent screen, and create a **Web application** OAuth client.
+2. Add the backend callback URL to the OAuth client, for example `http://localhost:5000/api/google/callback`. Add the LMS frontend origin as an authorized JavaScript origin if required by the Cloud Console.
+3. Add these values to `backend/.env` only:
+
+```env
+GOOGLE_CLIENT_ID=<web-client-id>
+GOOGLE_CLIENT_SECRET=<web-client-secret>
+GOOGLE_REDIRECT_URI=http://localhost:5000/api/google/callback
+GOOGLE_TIME_ZONE=Asia/Manila
+```
+
+The requested OAuth scope is `https://www.googleapis.com/auth/calendar.events`. A teacher can click **Connect** in the Google Calendar card on the teacher dashboard, which opens the authenticated backend route `/api/google/auth`, or open that route directly while logged in. OAuth state is signed and short-lived; access and refresh tokens are stored in MongoDB by the backend and must not be committed or exposed to the frontend. Use HTTPS and a secret-managed deployment for production.
+
+The connection status is available at `GET /api/google/status` for teachers. Reconnecting is supported when a Google account or consent grant changes.
+
+Class Meet endpoints are `POST /api/classes/:classId/meet` (teacher/admin create), `GET /api/classes/:classId/meet` (teacher/student/admin view), and `DELETE /api/classes/:classId/meet` (teacher/admin end). The backend verifies adviser or enrollment membership against the requested class ID, so changing the URL cannot grant access to another class.
 
 ---
 
@@ -166,7 +209,34 @@ Register the first user via `POST /api/users/register` with `role: "admin"`, the
 ### ✅ Timetable
 - Visual weekly grid (Mon–Sat)
 - Per-class schedule management
-- Subject + teacher + room assignment
+
+### ✅ Google Meet Sessions
+- Teachers connect Google Calendar through OAuth and create Meet-enabled Calendar events.
+- Students see enrolled-class sessions with a ten-minute join window, live countdown, and expiry.
+- Admins can filter, edit, and delete sessions; deletion also removes the Calendar event.
+- Meeting creation writes student notification records with `type: "meeting"`.
+
+#### Google Calendar setup
+1. In Google Cloud Console, create or select a project and enable **Google Calendar API**.
+2. Configure the OAuth consent screen. Add the Calendar Events scope and add teacher test users while the app is in testing.
+3. Create an OAuth 2.0 **Web application** client. Add `http://localhost:5000/api/google/callback` as an authorized redirect URI.
+4. Copy `backend/.env.example` to `backend/.env` and set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `GOOGLE_PROJECT_ID`, and `GOOGLE_TIME_ZONE`.
+5. Start the backend and open `/api/google/auth` while logged in as a teacher. Tokens are stored server-side in `GoogleToken`; they are never returned to the frontend.
+
+Meeting endpoints:
+```text
+GET    /api/google/auth
+GET    /api/google/callback
+GET    /api/google/status          teacher
+POST   /api/meetings/create          teacher
+PUT    /api/meetings/:id             teacher/admin
+DELETE /api/meetings/:id             teacher/admin
+GET    /api/meetings/teacher         teacher
+GET    /api/meetings/student         student
+GET    /api/meetings/:id             authenticated user
+GET    /api/admin/meetings           admin
+DELETE /api/admin/meetings/:id       admin
+```
 
 ### ✅ Announcements
 - Role-targeted (all/student/teacher/admin)
@@ -174,12 +244,12 @@ Register the first user via `POST /api/users/register` with `role: "admin"`, the
 - Class-specific announcements
 
 ### ✅ Analytics Dashboard (Admin)
-- Monthly activity charts (Area)
-- Score distribution (Horizontal Bar)
-- Subject performance comparison
-- Exam type distribution (Pie)
-- 5-year enrollment trend
-- KPI stat cards
+- Database-backed KPI cards for active students, teachers, classes, and published exams
+- Current academic-year student enrollment trend from active student records
+- Unique active students grouped by class grade level
+- Academic performance distribution from graded submissions
+- Recent activity from the audit log
+- Extended analytics view for submission, exam, score, and subject performance data
 
 ### ✅ Activity Audit Logs
 - Full system action trail
@@ -232,6 +302,7 @@ All follow standard REST patterns under `/api/classes`, `/api/subjects`, `/api/e
 ### Dashboard
 ```
 GET    /api/dashboard/stats    (admin)
+GET    /api/analytics?period=month|quarter|year    (admin)
 ```
 
 ---
@@ -248,9 +319,9 @@ GET    /api/dashboard/stats    (admin)
 
 ## 📝 Notes
 
-- The AI Assistant uses the Anthropic Claude API directly from the browser. It requires no backend changes.
-- No Google Meet or external video call integrations.
-- All existing backend files (user.ts, academicYear.ts, activitieslog.ts) are preserved and only improved — not replaced.
+- The AI Assistant uses the Google Gemini API through the backend and requires `GEMINI_API_KEY` (or `GOOGLE_API_KEY`).
+- Google Meet sessions are created as Google Calendar events through the backend OAuth integration.
+- Google OAuth credentials, Calendar tokens, and Gemini API keys must remain server-side and must never be committed.
 - The `.env` file contains your real MongoDB credentials — keep it secure and never commit to public repos.
 
 ---

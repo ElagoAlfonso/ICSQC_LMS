@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Award, Plus, Search, Eye, Printer, X, BookOpen, Users, GraduationCap } from 'lucide-react';
+import { Award, Plus, Search, Eye, Printer, X, BookOpen, Users, GraduationCap, ArrowLeft, Send } from 'lucide-react';
 import { Card, Button, Badge, DataTable, Pagination, Modal, Select, EmptyState } from '../../components/ui';
 import { reportCardsApi, usersApi, classesApi, academicYearsApi } from '../../utils/api';
 import { useAuthStore } from '../../store/authStore';
@@ -33,7 +33,7 @@ function PrintableReportCard({ card, onClose }: PrintableReportCardProps) {
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: 'DM Sans', sans-serif; background: #fff; }
         @page { size: A4; margin: 12mm; }
-        @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+        @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } .no-print { display: none !important; } }
       </style></head><body>${content}</body></html>
     `);
     win.document.close();
@@ -49,13 +49,15 @@ function PrintableReportCard({ card, onClose }: PrintableReportCardProps) {
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.7)', display: 'flex', flexDirection: 'column', alignItems: 'center', overflow: 'auto', padding: '20px' }}>
       {/* Toolbar */}
-      <div style={{ width: '100%', maxWidth: '720px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexShrink: 0 }} className="no-print">
-        <h2 style={{ color: '#fff', fontWeight: 700, fontSize: '1rem' }}>Report Card Preview</h2>
-        <div style={{ display: 'flex', gap: '10px' }}>
+      <div style={{ width: '100%', maxWidth: '720px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexShrink: 0, flexWrap: 'wrap', gap: '10px' }} className="no-print">
+        <button onClick={onClose} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem', padding: '8px 12px', fontFamily: 'inherit' }}>
+          <ArrowLeft size={15} /> Return to Report Cards
+        </button>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           <button onClick={handlePrint} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 18px', background: '#8B1A1A', border: 'none', borderRadius: '8px', color: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem', fontFamily: 'inherit' }}>
             <Printer size={15} /> Print / Save PDF
           </button>
-          <button onClick={onClose} style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(255,255,255,0.15)', border: 'none', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <button onClick={onClose} style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(255,255,255,0.15)', border: 'none', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }} aria-label="Exit report card" title="Exit report card">
             <X size={16} />
           </button>
         </div>
@@ -184,6 +186,11 @@ function PrintableReportCard({ card, onClose }: PrintableReportCardProps) {
           </p>
           <p style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.4)' }}>This is a computer-generated document.</p>
         </div>
+        <div className="no-print" style={{ padding: '14px 40px', display: 'flex', justifyContent: 'center', background: '#fff' }}>
+          <button type="button" onClick={onClose} style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', padding: '9px 18px', background: '#F3F4F6', border: '1px solid #D1D5DB', borderRadius: '8px', color: '#374151', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem', fontFamily: 'inherit' }}>
+            <ArrowLeft size={15} /> Return to Report Cards
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -191,7 +198,11 @@ function PrintableReportCard({ card, onClose }: PrintableReportCardProps) {
 
 export default function ReportCardsPage() {
   const { user } = useAuthStore();
+  const isAdmin = user?.role === 'admin';
+  const isTeacher = user?.role === 'teacher';
+
   const [cards, setCards] = useState<any[]>([]);
+  const [requests, setRequests] = useState<any[]>([]);
   const [pagination, setPagination] = useState<PaginationType>({ total: 0, page: 1, pages: 1, limit: 10 });
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -199,9 +210,12 @@ export default function ReportCardsPage() {
   const [classes, setClasses] = useState<Class[]>([]);
   const [students, setStudents] = useState<User[]>([]);
   const [generateModal, setGenerateModal] = useState(false);
+  const [requestModal, setRequestModal] = useState(false);
   const [viewCard, setViewCard] = useState<any | null>(null);
   const [saving, setSaving] = useState(false);
+  const [requesting, setRequesting] = useState(false);
   const [genForm, setGenForm] = useState({ studentId: '', classId: '', academicYearId: '', period: 'Q1' });
+  const [requestForm, setRequestForm] = useState({ studentId: '', period: 'Final' });
   const [ayFilter, setAyFilter] = useState('');
 
   useEffect(() => {
@@ -230,7 +244,19 @@ export default function ReportCardsPage() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchCards(); }, [page, ayFilter]);
+  const fetchRequests = async () => {
+    try {
+      const res = await reportCardsApi.getRequests();
+      setRequests(res.data.requests || []);
+    } catch {
+      setRequests([]);
+    }
+  };
+
+  useEffect(() => {
+    fetchCards();
+    fetchRequests();
+  }, [page, ayFilter, user?.role]);
 
   const handleGenerate = async () => {
     if (!genForm.studentId || !genForm.classId || !genForm.academicYearId) {
@@ -238,20 +264,82 @@ export default function ReportCardsPage() {
     }
     setSaving(true);
     try {
-      await reportCardsApi.generate(genForm);
+      const res = await reportCardsApi.generate(genForm);
       toast.success('Report card generated!');
       setGenerateModal(false);
-      fetchCards();
+      setViewCard(res.data);
+      await fetchCards();
+      await fetchRequests();
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Generation failed');
     }
     setSaving(false);
   };
 
+  const handleRequestReportCard = async () => {
+    if (!requestForm.studentId) {
+      toast.error('Please select a student first.');
+      return;
+    }
+    setRequesting(true);
+    try {
+      await reportCardsApi.request({
+        studentId: requestForm.studentId,
+        period: requestForm.period,
+        classId: students.find((s) => s._id === requestForm.studentId)?.studentClass,
+      });
+      toast.success('Report card request sent to the admin.');
+      setRequestModal(false);
+      setRequestForm({ studentId: '', period: 'Final' });
+      await fetchRequests();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Unable to send request');
+    } finally {
+      setRequesting(false);
+    }
+  };
+
+  const handleGenerateAndSend = async (request: any) => {
+    const student = request.student;
+    const classDoc = request.class;
+    if (!student || !classDoc) {
+      toast.error('Request is missing student or class details.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const generated = await reportCardsApi.generate({
+        studentId: student._id,
+        classId: classDoc._id,
+        academicYearId: request.academicYear?._id || request.academicYear,
+        period: request.period || 'Final',
+        requestId: request._id,
+      });
+      const card = generated.data;
+      await reportCardsApi.sendRequest(request._id, card._id);
+      toast.success('Report card sent to the requesting teacher.');
+      setViewCard(card);
+      await fetchCards();
+      await fetchRequests();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Unable to generate and send report card');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const ayOptions = [{ value: '', label: 'All Years' }, ...academicYears.map(a => ({ value: a._id, label: a.name }))];
   const studentOptions = [{ value: '', label: 'Select Student' }, ...students.map(s => ({ value: s._id, label: s.name }))];
   const classOptions = [{ value: '', label: 'Select Class' }, ...classes.map(c => ({ value: c._id, label: `${c.name} – ${c.section}` }))];
   const ayGenOptions = academicYears.map(a => ({ value: a._id, label: a.name }));
+
+  const statusColorMap: Record<string, 'green' | 'yellow' | 'blue' | 'gray'> = {
+    pending: 'yellow',
+    generated: 'blue',
+    sent: 'green',
+    received: 'green',
+  };
 
   const columns = [
     {
@@ -288,19 +376,81 @@ export default function ReportCardsPage() {
   ];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', flex: 1, minHeight: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
         <div>
           <h1 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--gray-900)', fontFamily: 'var(--font-display)' }}>Report Cards</h1>
-          <p style={{ color: 'var(--gray-500)', fontSize: '0.875rem', marginTop: '2px' }}>Generate and manage printable student report cards</p>
+          <p style={{ color: 'var(--gray-500)', fontSize: '0.875rem', marginTop: '2px' }}>
+            {isAdmin ? 'Generate and send report cards to teachers' : isTeacher ? 'Request and view student report cards' : 'View report cards'}
+          </p>
         </div>
-        {(user?.role === 'admin' || user?.role === 'teacher') && (
+        {isAdmin && (
           <Button icon={<Plus size={16} />} onClick={() => setGenerateModal(true)}>Generate Report Card</Button>
+        )}
+        {isTeacher && (
+          <Button icon={<Plus size={16} />} onClick={() => setRequestModal(true)}>Request Report Card</Button>
         )}
       </div>
 
+      {isAdmin && requests.length > 0 && (
+        <Card>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <h2 style={{ margin: 0, fontSize: '1rem', color: 'var(--gray-900)' }}>Report Card Requests</h2>
+            <Badge label={`${requests.length} pending`} color="yellow" />
+          </div>
+          <div style={{ display: 'grid', gap: 10 }}>
+            {requests.map((request) => (
+              <div key={request._id} style={{ border: '1px solid #E5E7EB', borderRadius: 12, padding: 14, display: 'grid', gap: 8, background: '#F8FAFC' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                  <div>
+                    <div style={{ fontSize: '0.72rem', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#7a1010', fontWeight: 700 }}>Request</div>
+                    <div style={{ fontWeight: 700, marginTop: 4 }}>{request.teacher?.name || 'Teacher'} • {request.student?.name || 'Student'}</div>
+                  </div>
+                  <Badge label={request.status || 'pending'} color={statusColorMap[request.status] || 'gray'} />
+                </div>
+                <div style={{ fontSize: '0.8rem', color: '#64748B' }}>
+                  Student: {request.student?.name || 'Unknown'} • Class: {request.class ? `${request.class.name} - ${request.class.section}` : '—'} • Period: {request.period || 'Final'}
+                </div>
+                <div style={{ fontSize: '0.8rem', color: '#64748B' }}>
+                  Requested: {request.requestedAt ? format(new Date(request.requestedAt), 'MMM d, yyyy h:mm a') : '—'}
+                </div>
+                {request.status !== 'sent' && (
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <Button size="sm" icon={<Send size={14} />} onClick={() => handleGenerateAndSend(request)}>Generate & Send</Button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {isTeacher && requests.length > 0 && (
+        <Card>
+          <h2 style={{ margin: '0 0 12px', fontSize: '1rem', color: 'var(--gray-900)' }}>My Report Card Requests</h2>
+          <div style={{ display: 'grid', gap: 10 }}>
+            {requests.map((request) => (
+              <div key={request._id} style={{ border: '1px solid #E5E7EB', borderRadius: 12, padding: 14, display: 'grid', gap: 8, background: '#F8FAFC' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                  <div style={{ fontWeight: 700 }}>{request.student?.name || 'Student'}</div>
+                  <Badge label={request.status || 'pending'} color={statusColorMap[request.status] || 'gray'} />
+                </div>
+                <div style={{ fontSize: '0.8rem', color: '#64748B' }}>
+                  {request.period || 'Final'} • {request.requestedAt ? format(new Date(request.requestedAt), 'MMM d, yyyy h:mm a') : '—'}
+                </div>
+                {request.status === 'sent' && (
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <Button size="sm" variant="outline" onClick={() => setViewCard(request.reportCard)}>View received report card</Button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
       <Card padding="16px">
-        <div style={{ display: 'flex', gap: '12px' }}>
+        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
           <select value={ayFilter} onChange={(e) => { setAyFilter(e.target.value); setPage(1); }}
             style={{ padding: '9px 14px', border: '1.5px solid var(--gray-200)', borderRadius: '9px', fontSize: '0.875rem', outline: 'none', fontFamily: 'var(--font-body)', background: '#fff', cursor: 'pointer', minWidth: '180px' }}>
             {ayOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -308,29 +458,46 @@ export default function ReportCardsPage() {
         </div>
       </Card>
 
-      <Card>
-        <DataTable columns={columns} data={cards} loading={loading} emptyMessage="No report cards generated yet" onRowClick={(c) => setViewCard(c)} />
-        <Pagination {...pagination} onChange={setPage} />
+      <Card style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+          <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+            <DataTable columns={columns} data={cards} loading={loading} emptyMessage="No report cards generated yet" onRowClick={(c) => setViewCard(c)} />
+          </div>
+          <div style={{ marginTop: '16px' }}>
+            <Pagination {...pagination} onChange={setPage} />
+          </div>
+        </div>
       </Card>
 
-      {/* Generate Modal */}
-      <Modal open={generateModal} onClose={() => setGenerateModal(false)} title="Generate Report Card"
-        footer={<><Button variant="secondary" onClick={() => setGenerateModal(false)}>Cancel</Button><Button loading={saving} onClick={handleGenerate}>Generate</Button></>}
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <div style={{ padding: '12px', background: '#EFF6FF', borderRadius: '10px', border: '1px solid #BFDBFE' }}>
-            <p style={{ fontSize: '0.8rem', color: '#1E40AF' }}>
-              📊 This will automatically calculate grades from the student's exam submissions and generate a printable report card.
-            </p>
+      {isAdmin && (
+        <Modal open={generateModal} onClose={() => setGenerateModal(false)} title="Generate Report Card"
+          footer={<><Button variant="secondary" onClick={() => setGenerateModal(false)}>Cancel</Button><Button loading={saving} onClick={handleGenerate}>Generate</Button></>}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ padding: '12px', background: '#EFF6FF', borderRadius: '10px', border: '1px solid #BFDBFE' }}>
+              <p style={{ fontSize: '0.8rem', color: '#1E40AF' }}>
+                📊 This will automatically calculate grades from the selected student's exam submissions and generate a printable report card.
+              </p>
+            </div>
+            <Select label="Student *" value={genForm.studentId} onChange={(e) => setGenForm({ ...genForm, studentId: e.target.value })} options={studentOptions} />
+            <Select label="Class *" value={genForm.classId} onChange={(e) => setGenForm({ ...genForm, classId: e.target.value })} options={classOptions} />
+            <Select label="Academic Year *" value={genForm.academicYearId} onChange={(e) => setGenForm({ ...genForm, academicYearId: e.target.value })} options={ayGenOptions} />
+            <Select label="Period *" value={genForm.period} onChange={(e) => setGenForm({ ...genForm, period: e.target.value })} options={PERIODS} />
           </div>
-          <Select label="Student *" value={genForm.studentId} onChange={(e) => setGenForm({ ...genForm, studentId: e.target.value })} options={studentOptions} />
-          <Select label="Class *" value={genForm.classId} onChange={(e) => setGenForm({ ...genForm, classId: e.target.value })} options={classOptions} />
-          <Select label="Academic Year *" value={genForm.academicYearId} onChange={(e) => setGenForm({ ...genForm, academicYearId: e.target.value })} options={ayGenOptions} />
-          <Select label="Period *" value={genForm.period} onChange={(e) => setGenForm({ ...genForm, period: e.target.value })} options={PERIODS} />
-        </div>
-      </Modal>
+        </Modal>
+      )}
 
-      {/* Printable Report Card Viewer */}
+      {isTeacher && (
+        <Modal open={requestModal} onClose={() => setRequestModal(false)} title="Request Report Card"
+          footer={<><Button variant="secondary" onClick={() => setRequestModal(false)}>Cancel</Button><Button loading={requesting} onClick={handleRequestReportCard}>Submit Request</Button></>}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <Select label="Student *" value={requestForm.studentId} onChange={(e) => setRequestForm({ ...requestForm, studentId: e.target.value })} options={studentOptions} />
+            <Select label="Period *" value={requestForm.period} onChange={(e) => setRequestForm({ ...requestForm, period: e.target.value })} options={PERIODS} />
+          </div>
+        </Modal>
+      )}
+
       {viewCard && <PrintableReportCard card={viewCard} onClose={() => setViewCard(null)} />}
     </div>
   );
