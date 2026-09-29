@@ -2,7 +2,11 @@
   "name": "backend",
   "module": "index.ts",
   "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
   "private": true,
+  "trustedDependencies": [],
   "scripts": {
     "build": "tsc --noEmit",
     "dev": "bun --watch src/server.ts",
@@ -19,9 +23,8 @@
     "@types/node": "^26.6.2",
     "inngest-cli": "^1.17.2",
     "nodemon": "^3.1.14",
-    "ts-node": "^10.9.2"
-  },
-  "peerDependencies": {
+    "ts-node": "^10.9.2",
+    "mongodb-memory-server": "^11.3.0",
     "typescript": "^5"
   },
   "overrides": {
@@ -44,7 +47,6 @@
     "inngest": "^3.52.6",
     "jsonwebtoken": "^9.0.3",
     "mongodb": "7.1.0",
-    "mongodb-memory-server": "^11.3.0",
     "mongoose": "9.2.4",
     "morgan": "^1.10.1",
     "multer": "^2.3.0",
