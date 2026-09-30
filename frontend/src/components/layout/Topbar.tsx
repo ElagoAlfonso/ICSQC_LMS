@@ -436,8 +436,8 @@ export default function Topbar({ title, subtitle }: TopbarProps) {
 
       {editAccountOpen && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 220, background: 'rgba(15, 23, 42, 0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-          <div style={{ width: 'min(520px, 100%)', background: '#FFFFFF', borderRadius: 24, boxShadow: '0 30px 90px rgba(15, 23, 42, 0.18)', overflow: 'hidden' }}>
-            <div style={{ padding: '26px 28px 20px' }}>
+          <div style={{ width: 'min(520px, 100%)', maxHeight: 'calc(100dvh - 40px)', background: '#FFFFFF', borderRadius: 24, boxShadow: '0 30px 90px rgba(15, 23, 42, 0.18)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: '26px 28px 20px', overflowY: 'auto', minHeight: 0 }}>
               <div style={{ fontSize: '0.75rem', letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 700, color: '#6B7280', marginBottom: 12 }}>Account personalization</div>
               <h2 style={{ margin: 0, fontSize: '1.6rem', lineHeight: 1.15, color: '#111827' }}>Edit your account details</h2>
               <p style={{ margin: '10px 0 0', color: '#475569', fontSize: '0.96rem', lineHeight: 1.7 }}>Update your display name, email address, and account status from this popup.</p>
