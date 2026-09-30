@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Bell, X, Check, BookOpen, FileText, Users, AlertCircle, User, Video, MessageCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
-import { notificationsApi } from '../../utils/api';
+import { authApi, notificationsApi } from '../../utils/api';
 
 interface TopbarProps {
   title?: string;
@@ -46,6 +46,8 @@ export default function Topbar({ title, subtitle }: TopbarProps) {
   const [editEmail, setEditEmail] = useState('');
   const [editActive, setEditActive] = useState(true);
   const [editPhoto, setEditPhoto] = useState<string | null>(null);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [savingAccount, setSavingAccount] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
@@ -195,23 +197,51 @@ export default function Topbar({ title, subtitle }: TopbarProps) {
     setEditEmail(user.email || '');
     setEditActive(user.isActive ?? true);
     setEditPhoto(user.profileImage || null);
+    setPhotoFile(null);
   }, [user, accountOpen]);
 
-  const handleSaveAccount = () => {
+  const handleSaveAccount = async () => {
     if (!user) return;
-    const updatedUser = { ...user, name: editName, email: editEmail, isActive: editActive, profileImage: editPhoto };
-    setUser(updatedUser);
-    toast.success('Account updated successfully', { duration: 3000 });
-    setEditAccountOpen(false);
+    setSavingAccount(true);
+    try {
+      let profileImage = user.profileImage || null;
+      if (photoFile) {
+        const response = await authApi.updateProfilePhoto(photoFile);
+        profileImage = response.data.user?.profileImage || null;
+      } else if (!editPhoto && user.profileImage) {
+        await authApi.removeProfilePhoto();
+        profileImage = null;
+      }
+
+      setUser({ ...user, name: editName, email: editEmail, isActive: editActive, profileImage });
+      toast.success(photoFile || !editPhoto ? 'Profile photo saved' : 'Account updated successfully', { duration: 3000 });
+      setEditAccountOpen(false);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'Unable to save profile photo.');
+    } finally {
+      setSavingAccount(false);
+    }
   };
 
   const handlePhotoChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      toast.error('Choose a JPEG, PNG, or WebP image.');
+      event.target.value = '';
+      return;
+    }
+    if (file.size > 4 * 1024 * 1024) {
+      toast.error('Profile photos must be 4 MB or smaller.');
+      event.target.value = '';
+      return;
+    }
+    setPhotoFile(file);
     const reader = new FileReader();
     reader.onload = () => {
       setEditPhoto(reader.result as string);
     };
+    reader.onerror = () => toast.error('Unable to preview this image.');
     reader.readAsDataURL(file);
   };
 
@@ -432,10 +462,10 @@ export default function Topbar({ title, subtitle }: TopbarProps) {
                     <div style={{ display: 'grid', gap: 8, width: '100%' }}>
                       <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '12px 16px', borderRadius: 12, border: '1.5px solid #D1D5DB', background: '#fff', color: '#111827', cursor: 'pointer', fontWeight: 600, fontSize: '0.95rem', transition: 'all 0.2s', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
                         {editPhoto ? 'Change photo' : 'Choose photo'}
-                        <input type="file" accept="image/*" onChange={handlePhotoChange} style={{ display: 'none' }} />
+                        <input type="file" accept="image/jpeg,image/png,image/webp" onChange={handlePhotoChange} style={{ display: 'none' }} />
                       </label>
                       {editPhoto && (
-                        <button type="button" onClick={() => setEditPhoto(null)} style={{ padding: '10px 16px', borderRadius: 12, border: '1.5px solid #FECACA', background: '#FEF2F2', color: '#DC2626', cursor: 'pointer', fontWeight: 600, fontSize: '0.95rem', transition: 'all 0.2s' }}>Remove photo</button>
+                        <button type="button" onClick={() => { setEditPhoto(null); setPhotoFile(null); }} style={{ padding: '10px 16px', borderRadius: 12, border: '1.5px solid #FECACA', background: '#FEF2F2', color: '#DC2626', cursor: 'pointer', fontWeight: 600, fontSize: '0.95rem', transition: 'all 0.2s' }}>Remove photo</button>
                       )}
                     </div>
                   </div>
@@ -453,7 +483,7 @@ export default function Topbar({ title, subtitle }: TopbarProps) {
             </div>
             <div style={{ padding: '16px 28px 24px', borderTop: '1px solid #F3F4F6', display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
               <button onClick={() => setEditAccountOpen(false)} style={{ padding: '12px 18px', borderRadius: 14, border: '1px solid #E5E7EB', background: '#fff', color: '#111827', cursor: 'pointer', fontWeight: 700 }}>Cancel</button>
-              <button onClick={handleSaveAccount} style={{ padding: '12px 18px', borderRadius: 14, border: 'none', background: '#991B1B', color: '#fff', cursor: 'pointer', fontWeight: 700 }}>Save changes</button>
+              <button onClick={handleSaveAccount} disabled={savingAccount} style={{ padding: '12px 18px', borderRadius: 14, border: 'none', background: '#991B1B', color: '#fff', cursor: savingAccount ? 'wait' : 'pointer', fontWeight: 700, opacity: savingAccount ? 0.7 : 1 }}>{savingAccount ? 'Saving…' : 'Save changes'}</button>
             </div>
           </div>
         </div>

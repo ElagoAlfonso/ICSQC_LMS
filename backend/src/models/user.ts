@@ -20,6 +20,8 @@ export interface IUser extends Document {
   isActive: boolean;
   studentClass?: string | null;
   teacherSubject?: string[] | null;
+  profileImage?: string | null;
+  profileImageStoragePath?: string | null;
   matchPassword: (enteredPassword: string) => Promise<boolean>;
 }
 
@@ -40,6 +42,8 @@ const userSchema: Schema<IUser> = new Schema(
     isActive: { type: Boolean, default: true },
     studentClass: { type: mongoose.Schema.Types.ObjectId, ref: "Class" },
     teacherSubject: [{ type: mongoose.Schema.Types.ObjectId, ref: "Subject" }],
+    profileImage: { type: String, default: null },
+    profileImageStoragePath: { type: String, select: false },
   },
   {
     timestamps: true,
@@ -62,6 +66,7 @@ userSchema.methods.matchPassword = async function (enteredPassword: string) {
 userSchema.methods.toJSON = function () {
   const userObject = this.toObject();
   delete userObject.password;
+  delete userObject.profileImageStoragePath;
   return userObject;
 };
 

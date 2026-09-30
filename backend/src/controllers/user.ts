@@ -4,6 +4,8 @@ import { generateToken } from "../utils/generateToken.ts";
 import { logActivity } from "../utils/activitieslog.ts";
 import type { AuthRequest } from "../middleware/auth.ts";
 import { createNotifications } from "../utils/notifications.ts";
+import { validateAttachment } from "../utils/attachments.ts";
+import { deleteStored, signedUrlFor, uploadBuffer } from "../utils/cloudinary.ts";
 import {
     isIcsqcEmail,
     isStrongPassword,
@@ -133,6 +135,7 @@ export const login = async  (req: Request, res: Response): Promise<void> => {
             isActive: user.isActive,
             studentClass: user.studentClass,
             teacherSubject: user.teacherSubject,
+            profileImage: user.profileImage,
         });
     } else {
         res.status(401).json({ message: "Invalid email or password" });
@@ -276,6 +279,71 @@ export const getUserProfile = async (req: AuthRequest, res: Response): Promise<v
         }
     } catch {
         res.status(500).json({ message: "Server Error" });
+    }
+};
+
+export const updateProfilePhoto = async (req: AuthRequest, res: Response): Promise<void> => {
+    const photo = req.file;
+    if (!photo) {
+        res.status(400).json({ message: "Choose a profile photo to upload." });
+        return;
+    }
+
+    let extension: string;
+    try {
+        extension = validateAttachment(photo);
+    } catch {
+        res.status(400).json({ message: "Use a valid JPEG, PNG, or WebP profile photo." });
+        return;
+    }
+    if (![".jpg", ".jpeg", ".png", ".webp"].includes(extension)) {
+        res.status(400).json({ message: "Profile photos must be JPEG, PNG, or WebP images." });
+        return;
+    }
+
+    let newStoragePath: string | undefined;
+    try {
+        const uploaded = await uploadBuffer(photo.buffer, "profile-photos");
+        newStoragePath = `${uploaded.resourceType}:${uploaded.publicId}`;
+
+        const user = await User.findById(req.user!._id).select("+profileImageStoragePath");
+        if (!user) {
+            await deleteStored(newStoragePath);
+            res.status(404).json({ message: "User not found." });
+            return;
+        }
+
+        const oldStoragePath = user.profileImageStoragePath;
+        user.profileImage = signedUrlFor(newStoragePath);
+        user.profileImageStoragePath = newStoragePath;
+        await user.save();
+        if (oldStoragePath && oldStoragePath !== newStoragePath) {
+            await deleteStored(oldStoragePath).catch(() => undefined);
+        }
+
+        res.status(200).json({ user });
+    } catch {
+        if (newStoragePath) await deleteStored(newStoragePath).catch(() => undefined);
+        res.status(500).json({ message: "Unable to save profile photo." });
+    }
+};
+
+export const removeProfilePhoto = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const user = await User.findById(req.user!._id).select("+profileImageStoragePath");
+        if (!user) {
+            res.status(404).json({ message: "User not found." });
+            return;
+        }
+
+        const oldStoragePath = user.profileImageStoragePath;
+        user.profileImage = null;
+        user.profileImageStoragePath = null;
+        await user.save();
+        if (oldStoragePath) await deleteStored(oldStoragePath).catch(() => undefined);
+        res.status(200).json({ user });
+    } catch {
+        res.status(500).json({ message: "Unable to remove profile photo." });
     }
 };
 

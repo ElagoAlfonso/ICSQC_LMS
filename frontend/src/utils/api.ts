@@ -25,6 +25,12 @@ export const authApi = {
     api.post('/users/login', { email, password }),
   logout: () => api.post('/users/logout'),
   getProfile: () => api.get('/users/profile'),
+  updateProfilePhoto: (file: File) => {
+    const formData = new FormData();
+    formData.append('profileImage', file);
+    return api.put('/users/profile/photo', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+  },
+  removeProfilePhoto: () => api.delete('/users/profile/photo'),
   register: (data: any) => api.post('/users/register', data),
   forgotPassword: (email: string) => api.post('/auth/forgot-password', { email }),
   verifyResetToken: (token: string) => api.get(`/auth/reset-password/${encodeURIComponent(token)}`),

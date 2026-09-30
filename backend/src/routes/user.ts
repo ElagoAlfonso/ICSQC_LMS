@@ -7,10 +7,13 @@ import {
     updateUser,
     deleteUser,
     getUserProfile,
+    updateProfilePhoto,
+    removeProfilePhoto,
     logout,
     getUsers,
 } from '../controllers/user.ts';
 import { protect, authorize } from '../middleware/auth.ts';
+import { parseProfilePhoto } from '../middleware/upload.ts';
 
 const router = express.Router();
 
@@ -22,6 +25,8 @@ router.get("/reset-password/:token", verifyResetToken);
 router.put("/reset-password/:token", resetPassword);
 router.post("/logout", logout);
 router.get("/profile", protect, getUserProfile);
+router.put("/profile/photo", protect, parseProfilePhoto, updateProfilePhoto);
+router.delete("/profile/photo", protect, removeProfilePhoto);
 
 // Teachers should be able to fetch all students
 router.get(
