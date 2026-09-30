@@ -196,6 +196,7 @@ export const classworkApi = {
   submit: (id: string, data: FormData) => api.post(`/classwork/${id}/submit`, data, { headers: { 'Content-Type': 'multipart/form-data' } }),
   getSubmissions: (id: string) => api.get(`/classwork/${id}/submissions`),
   getGrades: (id: string) => api.get(`/classwork/${id}/grades`),
+  getMyGrades: () => api.get('/classwork/grades/mine'),
   saveGrade: (classworkId: string, studentId: string, data: any) => api.put(`/classwork/${classworkId}/grades/${studentId}`, data),
   getMySubmissions: () => api.get('/classwork/submissions/mine'),
   gradeSubmission: (submissionId: string, data: any) => api.patch(`/classwork/submissions/${submissionId}/grade`, data),

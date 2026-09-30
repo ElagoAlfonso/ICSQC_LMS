@@ -1,15 +1,26 @@
 import React, { useEffect, useState } from 'react';
 import { Award, TrendingUp, BookOpen, CheckCircle2, ArrowLeft } from 'lucide-react';
 import { Card, Badge, Button } from '../../components/ui';
-import { submissionsApi, reportCardsApi, academicYearsApi } from '../../utils/api';
+import { submissionsApi, classworkApi, reportCardsApi } from '../../utils/api';
 import { useAuthStore } from '../../store/authStore';
-import type { Submission } from '../../types';
+import type { Classwork, ClassworkGrade, ClassworkSubmission, Submission, Subject } from '../../types';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
+
+type GradedClasswork = (ClassworkGrade | ClassworkSubmission) & {
+  classwork: Classwork | string;
+  subject?: Subject | string;
+};
+
+const getId = (value: { _id?: string } | string | undefined): string | undefined => {
+  if (typeof value === 'string') return value;
+  return value?._id;
+};
 
 export default function StudentGradesPage() {
   const { user } = useAuthStore();
   const [submissions, setSubmissions] = useState<Submission[]>([]);
+  const [classworkGrades, setClassworkGrades] = useState<GradedClasswork[]>([]);
   const [reportCards, setReportCards] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCard, setSelectedCard] = useState<any | null>(null);
@@ -17,11 +28,17 @@ export default function StudentGradesPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [subRes, rcRes] = await Promise.allSettled([
+        const [subRes, classworkRes, rcRes] = await Promise.allSettled([
           submissionsApi.getMySubmissions(),
+          classworkApi.getMyGrades(),
           user?._id ? reportCardsApi.getByStudent(user._id) : Promise.resolve({ data: { reportCards: [] } }),
         ]);
         if (subRes.status === 'fulfilled') setSubmissions(subRes.value.data.submissions || []);
+        if (classworkRes.status === 'fulfilled') {
+          const grades = classworkRes.value.data.grades || [];
+          const gradedSubmissions = classworkRes.value.data.submissions || [];
+          setClassworkGrades([...grades, ...gradedSubmissions]);
+        }
         if (rcRes.status === 'fulfilled') setReportCards(rcRes.value.data.reportCards || []);
       } catch { toast.error('Failed to load grades'); }
       setLoading(false);
@@ -29,27 +46,50 @@ export default function StudentGradesPage() {
     load();
   }, []);
 
-  // Group submissions by subject
-  const bySubject: Record<string, { name: string; scores: number[]; submissions: Submission[] }> = {};
-  submissions.forEach(sub => {
-    const exam = sub.exam as any;
+  const latestGradeByClasswork = new Map<string, GradedClasswork>();
+  classworkGrades.forEach((grade) => {
+    const classworkId = getId(grade.classwork);
+    if (!classworkId) return;
+    const previous = latestGradeByClasswork.get(classworkId);
+    if (!previous || new Date(grade.gradedAt || 0) >= new Date(previous.gradedAt || 0)) {
+      latestGradeByClasswork.set(classworkId, grade);
+    }
+  });
+  const gradedClasswork = [...latestGradeByClasswork.values()].sort(
+    (a, b) => new Date(b.gradedAt || 0).getTime() - new Date(a.gradedAt || 0).getTime(),
+  );
+
+  const bySubject: Record<string, { name: string; scores: number[]; passed: number }> = {};
+  const addSubjectScore = (subjectId: string | undefined, subjectName: string, percentage: number, passed: boolean) => {
+    if (!subjectId || !Number.isFinite(percentage)) return;
+    if (!bySubject[subjectId]) bySubject[subjectId] = { name: subjectName, scores: [], passed: 0 };
+    bySubject[subjectId].scores.push(percentage);
+    if (passed) bySubject[subjectId].passed += 1;
+  };
+
+  submissions.forEach((submission) => {
+    const exam = submission.exam as any;
     if (!exam?.subject) return;
     const subjectId = typeof exam.subject === 'object' ? exam.subject._id : exam.subject;
     const subjectName = typeof exam.subject === 'object' ? exam.subject.name : 'Unknown';
-    if (!bySubject[subjectId]) bySubject[subjectId] = { name: subjectName, scores: [], submissions: [] };
-    bySubject[subjectId].scores.push(sub.percentage);
-    bySubject[subjectId].submissions.push(sub);
+    addSubjectScore(subjectId, subjectName, submission.percentage, submission.isPassed);
+  });
+
+  gradedClasswork.forEach((grade) => {
+    const subject = typeof grade.subject === 'object' ? grade.subject : null;
+    const percentage = grade.percentage ?? (grade.totalPoints > 0 ? (Number(grade.score || 0) / grade.totalPoints) * 100 : 0);
+    addSubjectScore(getId(grade.subject), subject?.name || 'Unknown', percentage, percentage >= 75);
   });
 
   const subjectStats = Object.entries(bySubject).map(([id, data]) => {
     const avg = Math.round(data.scores.reduce((a, b) => a + b, 0) / data.scores.length);
-    const passed = data.submissions.filter(s => s.isPassed).length;
-    return { id, name: data.name, avg, passed, total: data.submissions.length, scores: data.scores };
+    return { id, name: data.name, avg, passed: data.passed, total: data.scores.length, scores: data.scores };
   });
 
   const overallAvg = subjectStats.length
-    ? Math.round(subjectStats.reduce((a, s) => a + s.avg, 0) / subjectStats.length)
+    ? Math.round(subjectStats.reduce((a, subject) => a + subject.avg, 0) / subjectStats.length)
     : 0;
+  const passedCount = subjectStats.reduce((total, subject) => total + subject.passed, 0);
 
   const getGradeLabel = (score: number) => {
     if (score >= 90) return { label: 'Excellent', color: 'green' as const };
@@ -90,7 +130,8 @@ export default function StudentGradesPage() {
             {[
               { label: 'Overall Average', value: `${overallAvg}%`, icon: <TrendingUp size={20} />, color: '#8B1A1A', bg: '#FEE2E2' },
               { label: 'Total Exams', value: submissions.length, icon: <BookOpen size={20} />, color: '#2563EB', bg: '#DBEAFE' },
-              { label: 'Passed', value: submissions.filter(s => s.isPassed).length, icon: <CheckCircle2 size={20} />, color: '#059669', bg: '#D1FAE5' },
+              { label: 'Graded Classwork', value: gradedClasswork.length, icon: <CheckCircle2 size={20} />, color: '#7C3AED', bg: '#EDE9FE' },
+              { label: 'Passed', value: passedCount, icon: <CheckCircle2 size={20} />, color: '#059669', bg: '#D1FAE5' },
               { label: 'Subjects', value: subjectStats.length, icon: <Award size={20} />, color: '#D97706', bg: '#FEF3C7' },
             ].map(stat => (
               <div key={stat.label} style={{ background: '#fff', borderRadius: '12px', padding: '18px 20px', border: '1px solid var(--gray-100)', boxShadow: 'var(--shadow-card)', display: 'flex', alignItems: 'center', gap: '14px' }}>
@@ -107,7 +148,7 @@ export default function StudentGradesPage() {
 
           {/* Subject performance */}
           {subjectStats.length > 0 && (
-            <Card title="Performance by Subject" subtitle="Average scores across all exams">
+            <Card title="Performance by Subject" subtitle="Average scores across exams and graded classwork">
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                 {subjectStats.map(sub => {
                   const { label, color } = getGradeLabel(sub.avg);
@@ -176,9 +217,46 @@ export default function StudentGradesPage() {
             </Card>
           )}
 
+          {gradedClasswork.length > 0 && (
+            <Card title="Graded Classwork" subtitle="Scores and feedback from your class assignments and activities">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {gradedClasswork.map((grade) => {
+                  const classwork = typeof grade.classwork === 'object' ? grade.classwork : null;
+                  const subject = typeof grade.subject === 'object' ? grade.subject : null;
+                  const percentage = grade.percentage ?? (grade.totalPoints > 0 ? (Number(grade.score || 0) / grade.totalPoints) * 100 : 0);
+                  const passed = percentage >= 75;
+                  return (
+                    <div key={grade._id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', borderRadius: '10px', background: 'var(--gray-50)' }}>
+                      <div style={{ width: 44, height: 44, borderRadius: '50%', flexShrink: 0, background: passed ? '#D1FAE5' : '#FEE2E2', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <span style={{ fontSize: '0.85rem', fontWeight: 700, color: passed ? '#059669' : '#DC2626' }}>{Math.round(percentage)}%</span>
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--gray-800)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{classwork?.title || 'Classwork'}</div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--gray-400)' }}>
+                          {subject?.name ? `${subject.name} · ` : ''}Score: {grade.score ?? 0}/{grade.totalPoints} · {grade.gradedAt ? format(new Date(grade.gradedAt), 'MMM d, yyyy') : 'Graded'}
+                        </div>
+                        {grade.feedback && <div style={{ marginTop: 4, fontSize: '0.78rem', color: 'var(--gray-600)' }}>{grade.feedback}</div>}
+                      </div>
+                      <Badge label={passed ? 'Passed' : 'Needs Improvement'} color={passed ? 'green' : 'red'} />
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+          )}
+
           {/* Report Cards */}
-          {reportCards.length > 0 && (
-            <Card title="Report Cards" subtitle="Official academic records">
+          <Card title="Academic Records" subtitle="Current general average includes graded exams and classwork">
+            <div style={{ marginBottom: 14, padding: 16, borderRadius: 10, background: '#F9FAFB', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+              <div>
+                <p style={{ fontSize: '0.72rem', color: 'var(--gray-500)', fontWeight: 600 }}>CURRENT GENERAL AVERAGE</p>
+                <p style={{ fontSize: '1.8rem', fontWeight: 700, color: overallAvg >= 75 ? '#059669' : '#DC2626', fontFamily: 'var(--font-display)' }}>{overallAvg}%</p>
+              </div>
+              <span style={{ fontSize: '0.78rem', color: 'var(--gray-500)' }}>
+                {subjectStats.reduce((total, subject) => total + subject.total, 0)} graded items · {subjectStats.length} subjects
+              </span>
+            </div>
+            {reportCards.length > 0 ? (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px' }}>
                 {reportCards.map(rc => (
                   <div key={rc._id} style={{ border: '1px solid var(--gray-200)', borderRadius: '12px', padding: '16px', cursor: 'pointer', transition: 'all 0.2s' }}
@@ -201,10 +279,10 @@ export default function StudentGradesPage() {
                   </div>
                 ))}
               </div>
-            </Card>
-          )}
+            ) : <p style={{ color: 'var(--gray-500)', fontSize: '0.875rem' }}>No official report cards have been issued yet.</p>}
+          </Card>
 
-          {submissions.length === 0 && reportCards.length === 0 && (
+          {submissions.length === 0 && gradedClasswork.length === 0 && reportCards.length === 0 && (
             <Card>
               <div style={{ padding: '48px', textAlign: 'center', color: 'var(--gray-400)', fontSize: '0.875rem' }}>
                 No grades yet. Take some exams to see your performance here.
