@@ -1,9 +1,8 @@
-import crypto from "node:crypto";
-import fs from "node:fs/promises";
+import { deleteStored, uploadBuffer } from "./cloudinary.ts";
 import path from "node:path";
 import type { Express } from "express";
 
-export const MAX_ATTACHMENT_SIZE = Number(process.env.MAX_ATTACHMENT_SIZE || 50 * 1024 * 1024);
+export const MAX_ATTACHMENT_SIZE = Number(process.env.MAX_ATTACHMENT_SIZE || 4 * 1024 * 1024);
 export const MAX_ATTACHMENTS_PER_POST = 10;
 
 const MIME_BY_EXTENSION: Record<string, string[]> = {
@@ -66,15 +65,11 @@ export const validateAttachment = (file: Express.Multer.File) => {
   return extension;
 };
 
-export const saveAttachment = async (file: Express.Multer.File, extension: string) => {
-  const directory = path.resolve(process.env.UPLOAD_DIR || "uploads/attachments");
-  await fs.mkdir(directory, { recursive: true });
-  const storageName = `${crypto.randomUUID()}${extension}`;
-  const storagePath = path.join(directory, storageName);
-  await fs.writeFile(storagePath, file.buffer, { flag: "wx" });
-  return { storageName, storagePath };
+export const saveAttachment = async (file: Express.Multer.File, _extension: string) => {
+  const { publicId, resourceType } = await uploadBuffer(file.buffer);
+  return { storageName: publicId, storagePath: `${resourceType}:${publicId}` };
 };
 
 export const removeStoredAttachment = async (storagePath: string) => {
-  try { await fs.unlink(storagePath); } catch (error: any) { if (error.code !== "ENOENT") throw error; }
+  try { await deleteStored(storagePath); } catch { /* best effort cleanup */ }
 };

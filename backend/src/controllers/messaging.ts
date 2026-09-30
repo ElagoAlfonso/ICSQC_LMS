@@ -1,5 +1,5 @@
 import { type Response } from "express";
-import path from "node:path";
+import { signedUrlFor } from "../utils/cloudinary.ts";
 import { type AuthRequest } from "../middleware/auth.ts";
 import { logActivity } from "../utils/activitieslog.ts";
 import { createNotification } from "../utils/notifications.ts";
@@ -405,12 +405,11 @@ export const downloadMessageAttachment = async (req: AuthRequest, res: Response)
     if (!message) { res.status(404).json({ message: "Message not found" }); return; }
     const attachment = message.attachments.find((item: any) => item._id.toString() === req.params.attachmentId);
     if (!attachment) { res.status(404).json({ message: "Attachment not found" }); return; }
-    res.type(attachment.mimeType);
-    if (req.query.download === "1") {
-      res.download(attachment.storagePath, attachment.originalName, { dotfiles: "deny" });
-    } else {
-      res.sendFile(attachment.storagePath, { dotfiles: "deny", headers: { "Content-Disposition": `inline; filename="${attachment.originalName.replace(/["\r\n]+/g, "")}"` } });
-    }
+
+    const url = signedUrlFor(attachment.storagePath, {
+      download: req.query.download === "1" ? attachment.originalName : undefined,
+    });
+    res.redirect(302, url);
   } catch (error) {
     if (!res.headersSent) res.status(500).json({ message: "Unable to retrieve message attachment" });
   }
@@ -761,5 +760,5 @@ export const getGroupPhoto = async (req: AuthRequest, res: Response): Promise<vo
     return;
   }
   res.setHeader("Cache-Control", "no-store");
-  res.sendFile(path.resolve(process.env.UPLOAD_DIR || "uploads/attachments", conversation.icon));
+     res.redirect(302, signedUrlFor(`image:${conversation.icon}`));
 };
