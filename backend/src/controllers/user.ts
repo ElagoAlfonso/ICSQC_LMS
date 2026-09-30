@@ -288,6 +288,10 @@ export const updateProfilePhoto = async (req: AuthRequest, res: Response): Promi
         res.status(400).json({ message: "Choose a profile photo to upload." });
         return;
     }
+    if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+        res.status(503).json({ message: "Profile photo storage is not configured on the backend." });
+        return;
+    }
 
     let extension: string;
     try {
@@ -322,8 +326,13 @@ export const updateProfilePhoto = async (req: AuthRequest, res: Response): Promi
         }
 
         res.status(200).json({ user });
-    } catch {
+    } catch (error) {
         if (newStoragePath) await deleteStored(newStoragePath).catch(() => undefined);
+        const errorName = error instanceof Error ? error.name : "UnknownError";
+        const providerStatus = typeof error === "object" && error !== null && "http_code" in error
+            ? `, status ${String(error.http_code)}`
+            : "";
+        console.error(`Profile photo upload failed (${errorName}${providerStatus}).`);
         res.status(500).json({ message: "Unable to save profile photo." });
     }
 };
