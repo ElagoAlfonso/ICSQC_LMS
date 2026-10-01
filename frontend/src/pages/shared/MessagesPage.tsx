@@ -53,7 +53,7 @@ export default function MessagesPage({ compact = false, onIncomingMessage, initi
   const [typingName, setTypingName] = useState("");
   const [peerOnline, setPeerOnline] = useState<boolean | null>(null);
   const [socket, setSocket] = useState<Socket | null>(null);
-  const [connectionStatus, setConnectionStatus] = useState<"connected" | "reconnecting" | "offline">("reconnecting");
+  const [connectionStatus, setConnectionStatus] = useState<"connecting" | "connected" | "reconnecting" | "offline">("connecting");
   const [reactionMenu, setReactionMenu] = useState<string | null>(null);
   const [reactionAnchor, setReactionAnchor] = useState<{ top: number; left: number } | null>(null);
   const [composerEmojiMenu, setComposerEmojiMenu] = useState(false);
@@ -94,11 +94,13 @@ export default function MessagesPage({ compact = false, onIncomingMessage, initi
       .catch(() => undefined);
     const realtime = io(import.meta.env.VITE_REALTIME_URL || window.location.origin, {
       withCredentials: true,
-      transports: ["websocket", "polling"],
     });
     realtime.on("connect", () => setConnectionStatus("connected"));
-    realtime.on("disconnect", () => setConnectionStatus("offline"));
-    realtime.on("connect_error", () => setConnectionStatus("reconnecting"));
+    realtime.on("disconnect", () => setConnectionStatus(realtime.active ? "reconnecting" : "offline"));
+    realtime.on("connect_error", () => setConnectionStatus(realtime.active ? "reconnecting" : "offline"));
+    realtime.io.on("reconnect_attempt", () => setConnectionStatus("reconnecting"));
+    realtime.io.on("reconnect_error", () => setConnectionStatus("reconnecting"));
+    realtime.io.on("reconnect_failed", () => setConnectionStatus("offline"));
     setSocket(realtime);
     return () => {
       realtime.disconnect();
@@ -887,7 +889,7 @@ export default function MessagesPage({ compact = false, onIncomingMessage, initi
                   </div>
                 </div>
                 {selected.type === "class_group" && <button type="button" onClick={openGroupSettings} aria-label="Group chat settings" title="Group chat settings" style={{ marginLeft: "auto", border: 0, background: "transparent", color: "#64748B", cursor: "pointer" }}><Settings size={17} /></button>}
-                {connectionStatus !== "connected" && <span style={{ marginLeft: "auto", fontSize: "0.7rem", color: connectionStatus === "offline" ? "#DC2626" : "#D97706" }}>{connectionStatus === "offline" ? "Offline" : "Reconnecting..."}</span>}
+                {connectionStatus !== "connected" && <span style={{ marginLeft: "auto", fontSize: "0.7rem", color: connectionStatus === "offline" ? "#DC2626" : "#D97706" }}>{connectionStatus === "offline" ? "Offline" : connectionStatus === "reconnecting" ? "Reconnecting..." : "Connecting..."}</span>}
               </header>
               {groupSettingsOpen && selected.type === "class_group" && (
                 <section style={{ flexShrink: 0, maxHeight: "min(330px, 48vh)", overflowY: "auto", background: "#fff", borderBottom: "1px solid #E5E7EB", color: "#334155" }}>
