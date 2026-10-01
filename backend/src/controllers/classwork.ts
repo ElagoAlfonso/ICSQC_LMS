@@ -732,6 +732,21 @@ export const saveClassworkGrade = async (req: AuthRequest, res: Response): Promi
     grade.gradedBy = req.user!._id;
     grade.gradedAt = new Date();
     await grade.save();
+    await ClassworkSubmission.findOneAndUpdate(
+      { classwork: classwork._id, student: studentId },
+      {
+        $set: {
+          score: resolvedScore,
+          totalPoints: classwork.points,
+          percentage: classwork.points > 0 ? (resolvedScore / classwork.points) * 100 : 0,
+          feedback: typeof feedback === "string" ? feedback.trim() : "",
+          rubricScores: resolvedRubricScores,
+          gradedBy: req.user!._id,
+          gradedAt: grade.gradedAt,
+          status: "graded",
+        },
+      }
+    );
     await grade.populate("student", "name email lrn");
 
     emitAcademicUpdate({ classId: classwork.class.toString(), kind: "classwork" });
@@ -835,6 +850,7 @@ export const gradeSubmission = async (req: AuthRequest, res: Response): Promise<
     submission.status = "graded";
 
     await submission.save();
+    emitAcademicUpdate({ classId: submission.class.toString(), kind: "submission" });
 
     // Update classwork graded count
     await Classwork.findByIdAndUpdate(submission.classwork, {

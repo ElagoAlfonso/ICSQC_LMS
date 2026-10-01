@@ -65,6 +65,13 @@ export default function SchoolworkPage() {
     const now = new Date();
 
     if (item.submission) {
+      if (item.submission.status === 'graded') {
+        return {
+          label: 'Graded',
+          color: 'green',
+        } as const;
+      }
+
       const submittedAt = item.submission.submittedAt ? new Date(item.submission.submittedAt) : null;
       const isLate = Boolean(dueDate && submittedAt && submittedAt.getTime() > dueDate.getTime());
       return {
@@ -165,7 +172,7 @@ export default function SchoolworkPage() {
                   const dueLabel = item.dueDate ? `${pastDue ? 'Past due • ' : ''}Due ${format(new Date(item.dueDate), 'MMM d, yyyy')}${item.dueTime ? ` at ${item.dueTime}` : ''}` : 'No due date';
                   return <button key={item._id} type="button" onClick={() => navigate(`/student/classes/${getId(item.class)}/classwork/${item._id}`)} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, width: '100%', padding: 12, textAlign: 'left', border: '1px solid #E5E7EB', background: '#fff', cursor: 'pointer' }}>
                     <span style={{ display: 'grid', placeItems: 'center', width: 34, height: 34, borderRadius: '50%', background: '#DBEAFE', color: '#2563EB', flexShrink: 0 }}><ClipboardList size={17} /></span>
-                    <span style={{ flex: 1, minWidth: 0 }}><strong style={{ display: 'block', color: '#111827' }}>{item.title}</strong><span style={{ display: 'block', marginTop: 3, color: '#64748B', fontSize: '0.78rem' }}>{classItem?.section || classItem?.name || 'Class'}{subject?.name ? ` · ${subject.name}` : ''}</span><span style={{ display: 'block', marginTop: 5, color: tab === 'missing' || pastDue ? '#DC2626' : '#64748B', fontSize: '0.78rem' }}><Clock size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} />{dueLabel}</span></span>
+                    <span style={{ flex: 1, minWidth: 0 }}><strong style={{ display: 'block', color: '#111827' }}>{item.title}</strong><span style={{ display: 'block', marginTop: 3, color: '#64748B', fontSize: '0.78rem' }}>{classItem?.section || classItem?.name || 'Class'}{subject?.name ? ` · ${subject.name}` : ''}</span>{tab !== 'done' && <span style={{ display: 'block', marginTop: 5, color: tab === 'missing' || pastDue ? '#DC2626' : '#64748B', fontSize: '0.78rem' }}><Clock size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} />{dueLabel}</span>}</span>
                     <Badge label={tab === 'done' ? status.label : tab === 'missing' ? 'Missing' : status.label === 'Past due' ? 'Past due' : item.type} color={status.color} />
                   </button>;
                 })}
