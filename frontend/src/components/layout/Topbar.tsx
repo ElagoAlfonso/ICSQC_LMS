@@ -56,6 +56,7 @@ export default function Topbar({ title, subtitle }: TopbarProps) {
   const unread = notifications.filter(n => !n.isRead).length;
   const initials = user?.name?.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase() || 'U';
   const roleLabel = user?.role ? user.role.charAt(0).toUpperCase() + user.role.slice(1) : '';
+  const hasValidLrn = typeof user?.lrn === 'string' && user.lrn.trim().length > 0;
 
   const getNotificationPath = (target: string) => {
     if (!user?.role) return '/';
@@ -451,6 +452,12 @@ export default function Topbar({ title, subtitle }: TopbarProps) {
                   Email
                   <input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} style={{ width: '100%', padding: '12px 14px', borderRadius: 14, border: '1px solid #E5E7EB', background: '#F8FAFC', color: '#111827', outline: 'none' }} />
                 </label>
+                {hasValidLrn && (
+                  <label style={{ display: 'grid', gap: 8, fontSize: '0.9rem', color: '#374151' }}>
+                    LRN
+                    <input value={user?.lrn ?? ''} readOnly style={{ width: '100%', padding: '12px 14px', borderRadius: 14, border: '1px solid #E5E7EB', background: '#F8FAFC', color: '#111827', outline: 'none' }} />
+                  </label>
+                )}
                 <label style={{ display: 'grid', gap: 8, fontSize: '0.9rem', color: '#374151' }}>
                   Profile photo
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, padding: '16px', background: '#F8FAFC', borderRadius: 16 }}>
