@@ -49,6 +49,17 @@ describe('isExamAvailableToStudent', () => {
     expect(isExamAvailableToStudent(exam as any, 'student-1', 'class-2')).toBe(false);
   });
 
+  it('keeps exams unavailable to students while pending Admin approval', () => {
+    const exam = {
+      status: 'pending_approval',
+      class: 'class-1',
+      startDate: new Date(Date.now() - 60_000),
+      endDate: new Date(Date.now() + 60_000),
+    };
+
+    expect(isExamAvailableToStudent(exam as any, 'student-1', 'class-1')).toBe(false);
+  });
+
   it('allows a populated class when the student belongs to that class', () => {
     const exam = {
       status: 'published',

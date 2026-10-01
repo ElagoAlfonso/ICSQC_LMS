@@ -20,7 +20,7 @@ export interface IQuestion {
   attachments?: IQuestionAttachment[];
 }
 
-export type ExamStatus = "draft" | "scheduled" | "published" | "closed" | "archived";
+export type ExamStatus = "draft" | "pending_approval" | "scheduled" | "published" | "closed" | "archived";
 
 export interface IExam extends Document {
   title: string;
@@ -38,7 +38,7 @@ export interface IExam extends Document {
   publishTime?: string;
   startDate: Date;
   endDate: Date;
-  examType: "quiz" | "periodical" | "midterm" | "finals" | "assignment" | "formative";
+  examType: "quiz" | "prelim" | "periodical" | "midterm" | "summative" | "final" | "finals" | "assignment" | "formative";
   status: ExamStatus;
   passingScore: number;
   allowLateSubmission?: boolean;
@@ -87,10 +87,10 @@ const examSchema = new Schema<IExam>(
     endDate: { type: Date, required: true },
     examType: {
       type: String,
-      enum: ["quiz", "periodical", "midterm", "finals", "assignment", "formative"],
+      enum: ["quiz", "prelim", "periodical", "midterm", "summative", "final", "finals", "assignment", "formative"],
       required: true,
     },
-    status: { type: String, enum: ["draft", "scheduled", "published", "closed", "archived"], default: "draft" },
+    status: { type: String, enum: ["draft", "pending_approval", "scheduled", "published", "closed", "archived"], default: "draft" },
     passingScore: { type: Number, default: 75 },
     allowLateSubmission: { type: Boolean, default: false },
   },

@@ -1,7 +1,7 @@
 import express from "express";
 import { protect, authorize } from "../middleware/auth.ts";
 import {
-  createExam, getExams, getExamById, startExam, updateExam, deleteExam, publishExam, closeExam,
+  createExam, getExams, getExamById, startExam, updateExam, deleteExam, publishExam, requestExamApproval, closeExam,
   submitExam, getSubmissions, getMySubmissions, gradeSubmission,
   createAnnouncement, getAnnouncements, updateAnnouncement, deleteAnnouncement,
   getDashboardStats,
@@ -102,9 +102,10 @@ router.get("/exams", protect, getExams);
 router.post("/exams/:id/start", protect, authorize(["student"]), startExam);
 router.get("/exams/:id", protect, getExamById);
 router.post("/exams", protect, authorize(["admin", "teacher"]), createExam);
+router.patch("/exams/:id/request-approval", protect, authorize(["teacher"]), requestExamApproval);
 router.put("/exams/:id", protect, authorize(["admin", "teacher"]), updateExam);
 router.delete("/exams/:id", protect, authorize(["admin", "teacher"]), deleteExam);
-router.patch("/exams/:id/publish", protect, authorize(["admin", "teacher"]), publishExam);
+router.patch("/exams/:id/publish", protect, authorize(["admin"]), publishExam);
 router.patch("/exams/:id/close", protect, authorize(["admin", "teacher"]), closeExam);
 
 // ── Submissions ───────────────────────────────────────────────────────────

@@ -26,8 +26,20 @@ import { emitAcademicUpdate } from "../realtime.ts";
 
 const requiresAdminApproval = (examType?: string) => {
   if (!examType) return false;
-  return ["periodical", "midterm", "finals"].includes(examType);
+  return ["prelim", "periodical", "midterm", "summative", "final", "finals"].includes(examType);
 };
+
+const examTypeLabel = (examType: string) => ({
+  prelim: "Prelim Exam",
+  periodical: "Periodical Exam",
+  midterm: "Midterm Exam",
+  summative: "Summative Exam",
+  final: "Final Exam",
+  finals: "Final Exam",
+  quiz: "Quiz",
+  assignment: "Assignment",
+  formative: "Formative Assessment",
+} as Record<string, string>)[examType] || "Exam";
 
 const examScheduleError = (exam: { status?: string; publishDate?: Date; startDate: Date; endDate: Date }) => {
   const now = Date.now();
@@ -112,7 +124,7 @@ export const createExam = async (req: AuthRequest, res: Response): Promise<void>
         subject: resolvedSubjectId,
         academicYear: resolvedAcademicYear,
         createdBy: req.user._id,
-        status: status || "draft",
+        status: "draft",
       };
 
       const exam = await Exam.create(resolvedPayload);
@@ -330,6 +342,11 @@ export const updateExam = async (req: AuthRequest, res: Response): Promise<void>
       return;
     }
 
+    if (req.user?.role === "teacher" && exam.status !== "draft") {
+      res.status(409).json({ message: "Only draft exams can be edited. Pending exams are locked for Admin review." });
+      return;
+    }
+
     if (req.user?.role === "teacher" && req.body.class) {
       const access = await validateTeacherExamAccess(req.user, req.body.class, req.body.subject || exam.subject?.toString());
       if (!access) {
@@ -338,7 +355,7 @@ export const updateExam = async (req: AuthRequest, res: Response): Promise<void>
       }
     }
 
-    const editableFields = ["title", "description", "questions", "duration", "timeLimit", "startDate", "endDate", "examType", "passingScore", "allowLateSubmission", "randomizeQuestions", "subject", "class", "academicYear", "status"];
+    const editableFields = ["title", "description", "questions", "duration", "timeLimit", "startDate", "endDate", "examType", "passingScore", "allowLateSubmission", "randomizeQuestions", "subject", "class", "academicYear"];
     for (const field of editableFields) {
       if (req.body[field] !== undefined) {
         if (field === "questions") {
@@ -363,6 +380,11 @@ export const deleteExam = async (req: AuthRequest, res: Response): Promise<void>
 
     if (req.user?.role === "teacher" && exam.createdBy.toString() !== req.user._id.toString()) {
       res.status(403).json({ message: "You can only delete your own exams." });
+      return;
+    }
+
+    if (req.user?.role === "teacher" && exam.status !== "draft") {
+      res.status(409).json({ message: "Only draft exams can be deleted after creation." });
       return;
     }
 
@@ -392,19 +414,66 @@ export const deleteExam = async (req: AuthRequest, res: Response): Promise<void>
   } catch (error) { res.status(500).json({ message: "Server Error", error }); }
 };
 
+export const requestExamApproval = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const exam = await Exam.findById(req.params.id);
+    if (!exam) { res.status(404).json({ message: "Exam not found" }); return; }
+    if (req.user?.role !== "teacher" || exam.createdBy.toString() !== req.user._id.toString()) {
+      res.status(403).json({ message: "Only the teacher who created this exam can request approval." });
+      return;
+    }
+    if (exam.status !== "draft") {
+      res.status(409).json({ message: "Only draft exams can be submitted for Admin approval." });
+      return;
+    }
+    if (!exam.questions.length) {
+      res.status(400).json({ message: "Add at least one question before requesting approval." });
+      return;
+    }
+
+    exam.status = "pending_approval";
+    await exam.save();
+    emitAcademicUpdate({ classId: exam.class.toString(), kind: "exam" });
+
+    try {
+      const admins = await User.find({ role: "admin", isActive: true }).select("_id").lean();
+      if (admins.length) {
+        await createNotifications(admins.map((admin) => admin._id), {
+          title: "Exam approval requested",
+          message: `${examTypeLabel(exam.examType)}: ${exam.title} is pending Admin approval.`,
+          type: "exam",
+          relatedResource: exam._id,
+        });
+      }
+    } catch (notificationError) {
+      console.error("Exam approval notification failed:", notificationError);
+    }
+
+    try {
+      await logActivity({ userId: req.user._id.toString(), action: "REQUEST_EXAM_APPROVAL", details: `Submitted ${examTypeLabel(exam.examType)} for approval: ${exam.title}` });
+    } catch (activityError) {
+      console.error("Exam approval activity log failed:", activityError);
+    }
+    res.json(exam);
+  } catch (error) {
+    res.status(500).json({ message: "Unable to request exam approval", error });
+  }
+};
+
 export const publishExam = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const requestBody = req.body ?? {};
     const exam = await Exam.findById(req.params.id);
     if (!exam) { res.status(404).json({ message: "Exam not found" }); return; }
 
-    if (req.user?.role === "teacher" && exam.createdBy.toString() !== req.user._id.toString()) {
-      res.status(403).json({ message: "You can only publish your own exams." });
+    if (req.user?.role !== "admin") {
+      res.status(403).json({ message: "Only an Admin can publish an exam." });
       return;
     }
 
-    if (req.user?.role === "teacher" && requiresAdminApproval(exam.examType)) {
-      res.status(403).json({ message: "Only the admin can publish major exams such as periodicals, midterms, and finals." });
+    const creator = await User.findById(exam.createdBy).select("role").lean();
+    if (creator?.role === "teacher" && exam.status !== "pending_approval") {
+      res.status(409).json({ message: "Teacher-created exams must be pending Admin approval before publishing." });
       return;
     }
 
@@ -540,7 +609,7 @@ export const publishExam = async (req: AuthRequest, res: Response): Promise<void
       if (students.length) {
         await createNotifications(students.map((student) => student._id), {
           title: "New exam published",
-          message: `${updated.title} is now available.`,
+          message: `${examTypeLabel(updated.examType)}: ${updated.title} is now available.`,
           type: "exam",
           relatedResource: updated._id,
         });
@@ -550,7 +619,7 @@ export const publishExam = async (req: AuthRequest, res: Response): Promise<void
     }
 
     try {
-      await logActivity({ userId: req.user!._id.toString(), action: "PUBLISH_EXAM", details: `Published exam: ${updated.title}` });
+      await logActivity({ userId: req.user!._id.toString(), action: "PUBLISH_EXAM", details: `Published ${examTypeLabel(updated.examType)}: ${updated.title}` });
     } catch (activityError) {
       console.error("Exam publish activity log failed:", activityError);
     }
