@@ -28,15 +28,16 @@ const hasValidGoogleClientConfig = () => {
   return clientIdLooksValid && clientSecretLooksValid && redirectLooksValid;
 };
 
-export const createGoogleOAuthState = (userId: string, role: "teacher" | "admin") => jwt.sign(
-  { teacherId: userId, role, purpose: "google-calendar-oauth" },
+export const createGoogleOAuthState = (userId: string, role: "teacher" | "admin", classId?: string) => jwt.sign(
+  { teacherId: userId, role, ...(classId ? { classId } : {}), purpose: "google-calendar-oauth" },
   process.env.JWT_SECRET as string,
   { expiresIn: "10m" }
 );
 
 export const verifyGoogleOAuthState = (state: string) => {
-  const decoded = jwt.verify(state, process.env.JWT_SECRET as string) as { teacherId: string; role: "teacher" | "admin"; purpose: string };
-  if (decoded.purpose !== "google-calendar-oauth") throw new Error("Invalid OAuth state");
+  const decoded = jwt.verify(state, process.env.JWT_SECRET as string) as { teacherId: string; role: "teacher" | "admin"; classId?: string; purpose: string };
+  if (decoded.purpose !== "google-calendar-oauth" || !decoded.teacherId || !["teacher", "admin"].includes(decoded.role)) throw new Error("Invalid OAuth state");
+  if (decoded.classId && !/^[a-f\d]{24}$/i.test(decoded.classId)) throw new Error("Invalid OAuth state");
   return decoded;
 };
 

@@ -270,15 +270,17 @@ export default function ClassWorkspacePage() {
     if (!isTeacher) return;
     if (!calendarConnected) {
       toast.error('Connect your Google Calendar before creating a Meet.');
-      googleApi.connectCalendar();
+      googleApi.connectCalendar(classId);
       return;
     }
     setCreatingMeet(true);
     try {
-      await meetingsApi.createClassMeet(classId!);
+      const response = await meetingsApi.createClassMeet(classId!);
+      const meetLink = response.data.meeting?.meetLink;
+      if (!meetLink) throw new Error('Google did not return a Meet link.');
       toast.success('Google Meet created.');
       setMeetModalOpen(false);
-      await load();
+      window.location.assign(meetLink);
     } catch (error: any) {
       toast.error(error.response?.data?.message || 'Unable to create Google Meet.');
     } finally {
@@ -1137,7 +1139,7 @@ export default function ClassWorkspacePage() {
       {activeTab === 'grades' && isTeacher && renderGrades()}
       {activeTab === 'people' && renderPeople()}
 
-      <Modal open={meetModalOpen && isTeacher} onClose={() => setMeetModalOpen(false)} title="Create Google Meet" footer={<><Button variant="secondary" onClick={() => setMeetModalOpen(false)}>Cancel</Button>{isTeacher && !calendarConnected ? <Button loading={calendarChecking} onClick={googleApi.connectCalendar}>Connect Google Calendar</Button> : isTeacher ? <Button loading={creatingMeet} onClick={createClassMeet}>Create Google Meet</Button> : null}</>}>
+      <Modal open={meetModalOpen && isTeacher} onClose={() => setMeetModalOpen(false)} title="Create Google Meet" footer={<><Button variant="secondary" onClick={() => setMeetModalOpen(false)}>Cancel</Button>{isTeacher && !calendarConnected ? <Button loading={calendarChecking} onClick={() => googleApi.connectCalendar(classId)}>Connect Google Calendar</Button> : isTeacher ? <Button loading={creatingMeet} onClick={createClassMeet}>Create Google Meet</Button> : null}</>}>
         <div style={{ display: 'grid', gap: 8 }}><span style={{ fontSize: '0.8rem', color: 'var(--gray-500)' }}>Class</span><strong style={{ color: 'var(--gray-900)' }}>{classDoc ? `${classDoc.name} - ${classDoc.section}` : 'Current class'}</strong><p style={{ margin: '8px 0 0', color: '#64748B', fontSize: '0.85rem' }}>{isTeacher && !calendarConnected ? 'Connect your Google Calendar first. The Meet will be created as a Calendar event after authorization.' : 'A Google Meet will be created for this class using your connected Google account.'}</p></div>
       </Modal>
       <Modal open={Boolean(editingGrade)} onClose={() => !savingGrade && setEditingGrade(null)} title="Enter grade" footer={<><Button variant="secondary" disabled={savingGrade} onClick={() => setEditingGrade(null)}>Cancel</Button><Button loading={savingGrade} onClick={saveGradeEntry}>Save grade</Button></>}>

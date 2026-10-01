@@ -43,6 +43,7 @@ const TimetablePage        = lazy(() => import('./pages/shared/TimetablePage'));
 const AnnouncementsPage    = lazy(() => import('./pages/shared/AnnouncementsPage'));
 const ProfilePage          = lazy(() => import('./pages/shared/ProfilePage'));
 const ReportCardsPage      = lazy(() => import('./pages/shared/ReportCardsPage'));
+const MeetResultPage       = lazy(() => import('./pages/shared/MeetResultPage'));
 
 function Loading() {
   return (
@@ -79,6 +80,7 @@ export default function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
+          <Route path="/meet-result" element={<MeetResultPage />} />
           <Route path="/"      element={<Navigate to="/login" replace />} />
 
           <Route element={<DashboardLayout />}> 

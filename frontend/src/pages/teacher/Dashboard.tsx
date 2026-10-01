@@ -78,7 +78,7 @@ export default function TeacherDashboard() {
       <Card
         title="Google Calendar"
         subtitle={calendarLoading ? 'Checking connection...' : calendarConnected ? 'Connected and ready for Google Meet' : 'Connect Calendar to create Meet sessions'}
-        action={<Button icon={<Calendar size={16} />} onClick={googleApi.connectCalendar}>{calendarConnected ? 'Reconnect' : 'Connect'}</Button>}
+        action={<Button icon={<Calendar size={16} />} onClick={() => googleApi.connectCalendar()}>{calendarConnected ? 'Reconnect' : 'Connect'}</Button>}
       >
         <p style={{ color: 'var(--gray-500)', fontSize: '0.875rem', margin: 0 }}>
           Meet sessions are added to your primary Google Calendar automatically.

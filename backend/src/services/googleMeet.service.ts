@@ -1,5 +1,5 @@
 import { google, calendar_v3 } from "googleapis";
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID } from "node:crypto";
 import GoogleToken from "../models/googleToken.model.ts";
 
 const scopes = ["https://www.googleapis.com/auth/calendar.events"];
@@ -20,15 +20,16 @@ export const saveGoogleTokens = async (teacherId: string, client: { credentials:
   expiry_date?: number | null;
 } }) => {
   const credentials = client.credentials;
-  if (!credentials.access_token || !credentials.refresh_token) {
-    throw new Error("Google did not return the required tokens. Reconnect Google Calendar.");
-  }
+  if (!credentials.access_token) throw new Error("Google did not return an access token.");
+  const existingToken = await GoogleToken.findOne({ teacherId });
+  const refreshToken = credentials.refresh_token || existingToken?.refreshToken;
+  if (!refreshToken) throw new Error("Google did not return a refresh token. Reconnect Google Calendar.");
   return GoogleToken.findOneAndUpdate(
     { teacherId },
     {
       teacherId,
       accessToken: credentials.access_token,
-      refreshToken: credentials.refresh_token,
+      refreshToken,
       expiryDate: new Date(credentials.expiry_date || Date.now()),
     },
     { upsert: true, new: true }
@@ -59,7 +60,7 @@ export const createGoogleMeetEvent = async (teacherId: string, input: {
     description: input.description || "",
     start: { dateTime: input.startDateTime.toISOString(), timeZone: process.env.GOOGLE_TIME_ZONE || "Asia/Manila" },
     end: { dateTime: input.endDateTime.toISOString(), timeZone: process.env.GOOGLE_TIME_ZONE || "Asia/Manila" },
-    conferenceData: { createRequest: { requestId: uuidv4(), conferenceSolutionKey: { type: "hangoutsMeet" } } },
+    conferenceData: { createRequest: { requestId: randomUUID(), conferenceSolutionKey: { type: "hangoutsMeet" } } },
   };
   const response = await calendar.events.insert({ calendarId: "primary", requestBody: event, conferenceDataVersion: 1 });
   const meetLink = response.data.hangoutLink || response.data.conferenceData?.entryPoints?.find((entry) => entry.entryPointType === "video")?.uri;

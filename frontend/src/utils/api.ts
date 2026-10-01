@@ -171,7 +171,10 @@ export const notificationsApi = {
 // ── Google Meet ─────────────────────────────────────────────────────────────
 export const googleApi = {
   getStatus: () => api.get('/google/status'),
-  connectCalendar: () => { window.location.assign(`${apiBaseUrl}/google/auth`); },
+  connectCalendar: (classId?: string) => {
+    const query = classId ? `?classId=${encodeURIComponent(classId)}` : '';
+    window.location.assign(`${apiBaseUrl}/google/auth${query}`);
+  },
 };
 
 export const meetingsApi = {

@@ -192,7 +192,7 @@ export const createClassMeet = async (req: AuthRequest, res: Response): Promise<
     }
 
     const startDateTime = new Date();
-    const endDateTime = new Date(startDateTime.getTime() + 2 * 60 * 60 * 1000);
+    const endDateTime = new Date(startDateTime.getTime() + 60 * 60 * 1000);
     const googleEvent = await createGoogleMeetEvent(req.user!._id.toString(), {
       title: `${classDoc.name} - ${classDoc.section} Google Meet`,
       startDateTime,
