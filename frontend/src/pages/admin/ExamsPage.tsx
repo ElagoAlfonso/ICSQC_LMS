@@ -16,9 +16,14 @@ import { useAuthStore } from '../../store/authStore';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import { getExamValidationErrors, hasExamValidationErrors } from '../../utils/examValidation';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 /* ─────────────── constants ─────────────── */
 const EXAM_TYPES = [
+  { value: 'prelim',      label: 'Prelim Exam' },
+  { value: 'midterm',     label: 'Midterm Exam' },
+  { value: 'summative',   label: 'Summative Exam' },
+  { value: 'final',       label: 'Final Exam' },
   { value: 'quiz',        label: 'Quiz'        },
   { value: 'periodical',  label: 'Periodical'  },
   { value: 'midterm',     label: 'Midterm'     },
@@ -54,6 +59,13 @@ const formatSafeDate = (value?: string | Date | null, pattern = 'MMM d') => {
   if (Number.isNaN(date.getTime())) return '—';
   return format(date, pattern);
 };
+
+const examTypeLabel = (examType: string) => ({
+  prelim: 'Prelim Exam', periodical: 'Periodical Exam', midterm: 'Midterm Exam',
+  summative: 'Summative Exam', final: 'Final Exam', finals: 'Final Exam',
+  quiz: 'Quiz', assignment: 'Assignment', formative: 'Formative Assessment',
+} as Record<string, string>)[examType] || 'Exam';
+const examStatusLabel = (status: Exam['status']) => status === 'pending_approval' ? 'Pending Admin Approval' : status.charAt(0).toUpperCase() + status.slice(1);
 
 const BLANK_Q: Question = {
   question: '', type: 'multiple_choice',
@@ -189,7 +201,12 @@ function QuestionBuilder({
 /* ─────────────── Main Page ─────────────── */
 export default function AdminExamsPage() {
   const { user } = useAuthStore();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [exams, setExams] = useState<Exam[]>([]);
+  const [pendingExams, setPendingExams] = useState<Exam[]>([]);
+  const [reviewExam, setReviewExam] = useState<Exam | null>(null);
+  const [reviewLoading, setReviewLoading] = useState(false);
   const [pagination, setPagination] = useState<PaginationType>({ total: 0, page: 1, pages: 1, limit: 10 });
   const [loading, setLoading] = useState(true);
   const [search, setSearch]   = useState('');
@@ -230,13 +247,35 @@ export default function AdminExamsPage() {
   const fetchExams = async () => {
     setLoading(true);
     try {
-      const res = await examsApi.getAll({ page, limit: 10, search, status: statusFilter });
+      const [res, pendingRes] = await Promise.all([
+        examsApi.getAll({ page, limit: 10, search, status: statusFilter }),
+        examsApi.getAll({ limit: 100, status: 'pending_approval' }),
+      ]);
       setExams(res.data.exams || []);
+      setPendingExams(pendingRes.data.exams || []);
       if (res.data.pagination) setPagination(res.data.pagination);
     } catch { toast.error('Failed to load exams'); }
     setLoading(false);
   };
   useEffect(() => { fetchExams(); }, [page, search, statusFilter]);
+
+  const openReview = async (exam: Exam | string) => {
+    setReviewLoading(true);
+    try {
+      const response = await examsApi.getById(typeof exam === 'string' ? exam : exam._id);
+      setReviewExam(response.data as Exam);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'Unable to load the exam for review.');
+    } finally {
+      setReviewLoading(false);
+    }
+  };
+  useEffect(() => {
+    const state = location.state as { reviewExamId?: string } | null;
+    if (!state?.reviewExamId) return;
+    void openReview(state.reviewExamId);
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.key, location.pathname, location.state, navigate]);
 
   /* helpers */
   const selectedClass = classes.find((c) => c._id === form.class) as Class | undefined;
@@ -244,7 +283,7 @@ export default function AdminExamsPage() {
   const subjectOpts   = [{ value: '', label: classSubjectIds.length ? 'Select Subject…' : 'Select a class first' }, ...subjects.filter((s) => classSubjectIds.length === 0 || classSubjectIds.includes(s._id)).map(s => ({ value: s._id, label: `${s.name} (${s.code})` }))];
   const classOpts     = [{ value: '', label: 'Select Class…' },     ...classes.map(c => ({ value: c._id, label: `${c.name} – ${c.section}` }))];
   const ayOpts        = [{ value: '', label: 'Select Year…' },      ...academicYears.map(a => ({ value: a._id, label: a.name }))];
-  const statusOpts    = [{ value: '', label: 'All Status' }, { value: 'draft', label: 'Draft' }, { value: 'published', label: 'Published' }, { value: 'closed', label: 'Closed' }];
+  const statusOpts    = [{ value: '', label: 'All Status' }, { value: 'draft', label: 'Draft' }, { value: 'pending_approval', label: 'Pending Admin Approval' }, { value: 'published', label: 'Published' }, { value: 'closed', label: 'Closed' }];
 
   const handleClassChange = (nextClassId: string) => {
     const nextClass = classes.find((c) => c._id === nextClassId) as Class | undefined;
@@ -327,8 +366,13 @@ export default function AdminExamsPage() {
     if (validateExamInfo()) setQTab('questions');
   };
 
-  const handlePublish = async (id: string) => {
-    try { await examsApi.publish(id); toast.success('Published'); fetchExams(); }
+  const handlePublish = async (exam: Exam) => {
+    try {
+      await examsApi.publish(exam._id);
+      toast.success(`${examTypeLabel(exam.examType)} published.`);
+      setReviewExam(null);
+      await fetchExams();
+    }
     catch (err: any) { toast.error(err.response?.data?.message || 'Publish failed'); }
   };
   const handleClose = async (id: string) => {
@@ -359,7 +403,8 @@ export default function AdminExamsPage() {
         </div>
       )
     },
-    { key: 'examType', label: 'Type', render: (e: Exam) => <Badge label={e.examType} color={e.examType === 'finals' ? 'red' : e.examType === 'midterm' ? 'yellow' : 'blue'} /> },
+    { key: 'examType', label: 'Type', render: (e: Exam) => <Badge label={examTypeLabel(e.examType)} color={e.examType === 'final' || e.examType === 'finals' ? 'red' : e.examType === 'midterm' ? 'yellow' : 'blue'} /> },
+    { key: 'teacher', label: 'Teacher', render: (e: Exam) => <span style={{ fontSize: '0.8rem', color: 'var(--gray-600)' }}>{typeof e.createdBy === 'object' ? e.createdBy.name : '—'}</span> },
     { key: 'subject',  label: 'Subject',  render: (e: Exam) => <span style={{ fontSize: '0.8rem', color: 'var(--gray-600)' }}>{typeof e.subject === 'object' ? (e.subject as Subject).name : '—'}</span> },
     { key: 'class',    label: 'Class',    render: (e: Exam) => <span style={{ fontSize: '0.8rem', color: 'var(--gray-600)' }}>{typeof e.class === 'object' ? `${(e.class as Class).name} – ${(e.class as Class).section}` : '—'}</span> },
     {
@@ -371,13 +416,16 @@ export default function AdminExamsPage() {
         </div>
       )
     },
-    { key: 'status', label: 'Status', render: (e: Exam) => <Badge label={e.status} color={e.status === 'published' ? 'green' : e.status === 'draft' ? 'yellow' : 'gray'} /> },
+    { key: 'status', label: 'Status', render: (e: Exam) => <Badge label={examStatusLabel(e.status)} color={e.status === 'published' ? 'green' : e.status === 'draft' ? 'yellow' : e.status === 'pending_approval' ? 'blue' : 'gray'} /> },
     {
       key: 'actions', label: '',
       render: (e: Exam) => (
         <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-          <button onClick={ev => { ev.stopPropagation(); openEdit(e); }} style={{ padding: '5px 9px', background: '#EFF6FF', border: 'none', borderRadius: '6px', color: '#2563EB', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '3px', fontFamily: 'var(--font-body)' }}><Edit2 size={11} /> Edit</button>
-          {e.status === 'draft'     && <button onClick={ev => { ev.stopPropagation(); handlePublish(e._id); }} style={{ padding: '5px 9px', background: '#D1FAE5', border: 'none', borderRadius: '6px', color: '#059669', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '3px', fontFamily: 'var(--font-body)' }}><Send size={11} /> Publish</button>}
+          {e.status === 'pending_approval'
+            ? <button onClick={ev => { ev.stopPropagation(); void openReview(e); }} style={{ padding: '5px 9px', background: '#EFF6FF', border: 'none', borderRadius: '6px', color: '#2563EB', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '3px', fontFamily: 'var(--font-body)' }}><Edit2 size={11} /> View Exam</button>
+            : <button onClick={ev => { ev.stopPropagation(); openEdit(e); }} style={{ padding: '5px 9px', background: '#EFF6FF', border: 'none', borderRadius: '6px', color: '#2563EB', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '3px', fontFamily: 'var(--font-body)' }}><Edit2 size={11} /> Edit</button>}
+          {e.status === 'draft' && (typeof e.createdBy === 'object' ? e.createdBy._id : e.createdBy) === user?._id && <button onClick={ev => { ev.stopPropagation(); handlePublish(e); }} style={{ padding: '5px 9px', background: '#D1FAE5', border: 'none', borderRadius: '6px', color: '#059669', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '3px', fontFamily: 'var(--font-body)' }}><Send size={11} /> Publish</button>}
+          {e.status === 'pending_approval' && <button onClick={ev => { ev.stopPropagation(); handlePublish(e); }} style={{ padding: '5px 9px', background: '#D1FAE5', border: 'none', borderRadius: '6px', color: '#059669', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '3px', fontFamily: 'var(--font-body)' }}><Send size={11} /> Approve &amp; Publish</button>}
           {e.status === 'published' && <button onClick={ev => { ev.stopPropagation(); handleClose(e._id); }}   style={{ padding: '5px 9px', background: '#F3F4F6', border: 'none', borderRadius: '6px', color: '#6B7280', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '3px', fontFamily: 'var(--font-body)' }}><Lock size={11} /> Close</button>}
           <button onClick={ev => { ev.stopPropagation(); setDeleteTarget(e); }} style={{ padding: '5px 9px', background: '#FEE2E2', border: 'none', borderRadius: '6px', color: '#DC2626', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '3px', fontFamily: 'var(--font-body)' }}><Trash2 size={11} /> Delete</button>
         </div>
@@ -397,6 +445,27 @@ export default function AdminExamsPage() {
         </div>
         {user?.role === 'teacher' && <Button icon={<Plus size={16} />} onClick={openCreate}>Create Exam</Button>}
       </div>
+
+      <Card title="Exam Approval Requests" subtitle="Teacher exams awaiting review">
+        {pendingExams.length === 0 ? <p style={{ margin: 0, color: '#64748B' }}>No exams are waiting for approval.</p> : <div style={{ display: 'grid', gap: 9 }}>
+          {pendingExams.map((exam) => {
+            const teacher = typeof exam.createdBy === 'object' ? exam.createdBy.name : 'Teacher';
+            const subject = typeof exam.subject === 'object' ? exam.subject.name : 'Subject';
+            const className = typeof exam.class === 'object' ? `${exam.class.name} · ${exam.class.section}` : 'Class';
+            return <div key={exam._id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', alignItems: 'center', gap: 12, padding: '11px 0', borderBottom: '1px solid #E5E7EB' }}>
+              <div style={{ minWidth: 0 }}>
+                <strong style={{ display: 'block', color: '#111827', fontSize: '0.86rem' }}>{exam.title}</strong>
+                <span style={{ display: 'block', marginTop: 4, color: '#64748B', fontSize: '0.76rem' }}>{teacher} · {subject} · {className} · {examTypeLabel(exam.examType)}</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 7, flexWrap: 'wrap' }}>
+                <Badge label={examStatusLabel(exam.status)} color="blue" />
+                <Button size="sm" variant="outline" onClick={() => void openReview(exam)}>View Exam</Button>
+                <Button size="sm" onClick={() => handlePublish(exam)}>Approve &amp; Publish</Button>
+              </div>
+            </div>;
+          })}
+        </div>}
+      </Card>
 
       {/* Filters */}
       <Card padding="14px">
@@ -461,8 +530,36 @@ export default function AdminExamsPage() {
           </div>
         )}
       </Modal>
-
       )}
+
+      <Modal open={reviewLoading || !!reviewExam} onClose={() => !reviewLoading && setReviewExam(null)} title="Review Exam" width="760px"
+        footer={<><Button variant="secondary" disabled={reviewLoading} onClick={() => setReviewExam(null)}>Close</Button>{reviewExam?.status === 'pending_approval' && <Button loading={saving} onClick={() => handlePublish(reviewExam)}>Approve &amp; Publish</Button>}</>}
+      >
+        {reviewLoading || !reviewExam ? <p style={{ margin: 0, color: '#64748B' }}>Loading exam details...</p> : <div style={{ display: 'grid', gap: 14, maxHeight: '65vh', overflowY: 'auto' }}>
+          <div style={{ padding: 14, background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+              <div><div style={{ color: '#7a1010', fontSize: '0.75rem', fontWeight: 700 }}>{examTypeLabel(reviewExam.examType)}</div><h2 style={{ margin: '5px 0', color: '#111827', fontSize: '1.15rem' }}>{reviewExam.title}</h2><p style={{ margin: 0, color: '#64748B', fontSize: '0.8rem' }}>{reviewExam.description || 'No description provided.'}</p></div>
+              <Badge label={examStatusLabel(reviewExam.status)} color={reviewExam.status === 'pending_approval' ? 'blue' : reviewExam.status === 'published' ? 'green' : 'yellow'} />
+            </div>
+            <div style={{ display: 'flex', gap: '6px 18px', flexWrap: 'wrap', marginTop: 12, color: '#475569', fontSize: '0.78rem' }}>
+              <span>Teacher: <strong>{typeof reviewExam.createdBy === 'object' ? reviewExam.createdBy.name : 'Teacher'}</strong></span>
+              <span>Subject: <strong>{typeof reviewExam.subject === 'object' ? reviewExam.subject.name : '—'}</strong></span>
+              <span>Class: <strong>{typeof reviewExam.class === 'object' ? `${reviewExam.class.name} · ${reviewExam.class.section}` : '—'}</strong></span>
+              <span>Duration: <strong>{reviewExam.duration} min</strong></span>
+              <span>Available: <strong>{formatSafeDate(reviewExam.startDate, 'MMM d, yyyy')} – {formatSafeDate(reviewExam.endDate, 'MMM d, yyyy')}</strong></span>
+            </div>
+          </div>
+          <div style={{ display: 'grid', gap: 9 }}>
+            <strong style={{ color: '#334155', fontSize: '0.85rem' }}>Questions · {reviewExam.questions.length}</strong>
+            {reviewExam.questions.map((question, index) => <div key={`${index}-${question.question}`} style={{ padding: 12, border: '1px solid #E5E7EB', borderRadius: 8 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, color: '#334155', fontSize: '0.8rem' }}><strong>Question {index + 1}</strong><span>{question.points} pts · {question.type.replace('_', ' ')}</span></div>
+              <p style={{ margin: '7px 0', whiteSpace: 'pre-wrap', color: '#1F2937', fontSize: '0.86rem' }}>{question.question}</p>
+              {question.choices?.length ? <div style={{ display: 'grid', gap: 4, color: '#475569', fontSize: '0.8rem' }}>{question.choices.map((choice, choiceIndex) => <span key={choiceIndex}>{String.fromCharCode(65 + choiceIndex)}. {choice}</span>)}</div> : null}
+              <div style={{ marginTop: 7, color: '#166534', fontSize: '0.78rem' }}>Correct answer: {question.correctAnswer}</div>
+            </div>)}
+          </div>
+        </div>}
+      </Modal>
 
       {/* Delete confirm */}
       <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Confirm Delete" width="400px"

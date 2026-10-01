@@ -173,7 +173,7 @@ export default function AnnouncementsPage() {
   );
 }
 
-export function AnnouncementCard({ ann, targetColor }: any) {
+export function AnnouncementCard({ ann, targetColor, readOnly = false }: any) {
   const { user } = useAuthStore();
   const [comments, setComments] = useState<Comment[]>([]);
   const [replies, setReplies] = useState<Record<string, Comment[]>>({});
@@ -357,10 +357,10 @@ export function AnnouncementCard({ ann, targetColor }: any) {
       </div>
       <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid #F1F5F9' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <div style={{ position: 'relative' }}>
+          {!readOnly && <div style={{ position: 'relative' }}>
             <button type="button" disabled={reactionSubmitting} onClick={() => setReactionMenu((value) => !value)} style={{ border: 0, background: '#FFF7F7', color: '#7a1010', borderRadius: 8, padding: '6px 9px', cursor: reactionSubmitting ? 'wait' : 'pointer' }}>{reactionSubmitting ? '...' : 'React'}</button>
             {reactionMenu && <div style={{ position: 'absolute', left: 0, top: 34, zIndex: 3, display: 'flex', gap: 3, padding: 5, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 8, boxShadow: '0 4px 12px rgba(15,23,42,0.12)' }}>{reactionOptions.map((emoji) => <button key={emoji} type="button" disabled={reactionSubmitting} aria-pressed={selectedReaction === emoji} onClick={(event) => handleReactionSelect(event, emoji)} style={{ border: selectedReaction === emoji ? '1px solid #8B1A1A' : 0, background: selectedReaction === emoji ? '#FEE2E2' : 'transparent', borderRadius: 5, cursor: reactionSubmitting ? 'wait' : 'pointer', fontSize: '1rem', padding: 2 }}>{emoji}</button>)}</div>}
-          </div>
+          </div>}
           {Object.entries(reactions).map(([emoji, users]) => <span key={emoji} style={{ fontSize: '0.78rem', color: '#475569' }}>{emoji} {users.length}</span>)}
           <span style={{ marginLeft: 'auto', fontSize: '0.78rem', color: '#64748B' }}><MessageCircle size={13} style={{ verticalAlign: 'middle', marginRight: 4 }} />{totalCommentCount} comments</span>
         </div>
@@ -370,7 +370,7 @@ export function AnnouncementCard({ ann, targetColor }: any) {
             return <div key={comment._id} style={{ padding: 10, background: '#F8FAFC', borderRadius: 9 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}><strong style={{ fontSize: '0.78rem', color: '#334155' }}>{commentAuthor?.name || 'User'}</strong><span style={{ fontSize: '0.68rem', color: '#94A3B8' }}>{formatDistanceToNow(new Date(comment.createdAt), { addSuffix: true })}</span></div>
               <p style={{ margin: '5px 0 8px', fontSize: '0.8rem', color: '#475569', whiteSpace: 'pre-wrap' }}>{comment.text} {comment.isEdited && <em style={{ fontSize: '0.7rem', color: '#94A3B8' }}>(edited)</em>}</p>
-              <div style={{ display: 'flex', gap: 8 }}><button type="button" onClick={() => { setReplyTo(comment); setEditingComment(null); setCommentText(''); }} style={{ border: 0, background: 'transparent', color: '#7a1010', fontSize: '0.72rem', cursor: 'pointer' }}>Reply</button>{commentAuthor?._id === user?._id && <button type="button" onClick={() => { setEditingComment(comment); setReplyTo(null); setCommentText(comment.text); }} style={{ border: 0, background: 'transparent', color: '#64748B', fontSize: '0.72rem', cursor: 'pointer' }}>Edit</button>}{(commentAuthor?._id === user?._id || user?.role === 'teacher' || user?.role === 'admin') && <button type="button" onClick={() => deleteComment(comment)} style={{ border: 0, background: 'transparent', color: '#DC2626', cursor: 'pointer' }} aria-label="Delete comment"><Trash2 size={13} /></button>}</div>
+              {!readOnly && <div style={{ display: 'flex', gap: 8 }}><button type="button" onClick={() => { setReplyTo(comment); setEditingComment(null); setCommentText(''); }} style={{ border: 0, background: 'transparent', color: '#7a1010', fontSize: '0.72rem', cursor: 'pointer' }}>Reply</button>{commentAuthor?._id === user?._id && <button type="button" onClick={() => { setEditingComment(comment); setReplyTo(null); setCommentText(comment.text); }} style={{ border: 0, background: 'transparent', color: '#64748B', fontSize: '0.72rem', cursor: 'pointer' }}>Edit</button>}{(commentAuthor?._id === user?._id || user?.role === 'teacher' || user?.role === 'admin') && <button type="button" onClick={() => deleteComment(comment)} style={{ border: 0, background: 'transparent', color: '#DC2626', cursor: 'pointer' }} aria-label="Delete comment"><Trash2 size={13} /></button>}</div>}
               {(replies[comment._id] || []).map((reply) => { const replyAuthor = typeof reply.author === 'object' ? reply.author as User : null; return <div key={reply._id} style={{ margin: '8px 0 0 18px', padding: 8, borderLeft: '2px solid #E2E8F0' }}><strong style={{ fontSize: '0.74rem', color: '#334155' }}>{replyAuthor?.name || 'User'}</strong><p style={{ margin: '3px 0 0', fontSize: '0.78rem', color: '#64748B' }}>{reply.text} {reply.isEdited && <em>(edited)</em>}</p></div>; })}
             </div>;
           })}
@@ -384,8 +384,8 @@ export function AnnouncementCard({ ann, targetColor }: any) {
             {commentsExpanded ? 'Hide comments' : `View all ${totalCommentCount} comments`}
           </button>
         )}
-        {(replyTo || editingComment) && <div style={{ marginTop: 10, fontSize: '0.75rem', color: '#64748B' }}>{editingComment ? 'Editing comment' : `Replying to ${typeof replyTo?.author === 'object' ? replyTo.author.name : 'comment'}`} <button type="button" onClick={() => { setReplyTo(null); setEditingComment(null); setCommentText(''); }} style={{ border: 0, background: 'transparent', color: '#7a1010', cursor: 'pointer' }}>Cancel</button></div>}
-        <form onSubmit={(event) => { event.preventDefault(); submitComment(); }} style={{ display: 'flex', gap: 8, marginTop: 10 }}><input disabled={commentSubmitting} value={commentText} onChange={(event) => setCommentText(event.target.value)} placeholder={replyTo ? 'Write a reply...' : 'Add a comment...'} style={{ flex: 1, minWidth: 0, padding: '8px 10px', border: '1px solid #E5E7EB', borderRadius: 8, outline: 'none' }} /><button type="submit" disabled={commentSubmitting} aria-label="Post comment" style={{ border: 0, background: '#8B1A1A', color: '#fff', borderRadius: 8, padding: '0 11px', cursor: commentSubmitting ? 'wait' : 'pointer' }}>{commentSubmitting ? '...' : <Send size={14} />}</button></form>
+        {!readOnly && (replyTo || editingComment) && <div style={{ marginTop: 10, fontSize: '0.75rem', color: '#64748B' }}>{editingComment ? 'Editing comment' : `Replying to ${typeof replyTo?.author === 'object' ? replyTo.author.name : 'comment'}`} <button type="button" onClick={() => { setReplyTo(null); setEditingComment(null); setCommentText(''); }} style={{ border: 0, background: 'transparent', color: '#7a1010', cursor: 'pointer' }}>Cancel</button></div>}
+        {!readOnly && <form onSubmit={(event) => { event.preventDefault(); submitComment(); }} style={{ display: 'flex', gap: 8, marginTop: 10 }}><input disabled={commentSubmitting} value={commentText} onChange={(event) => setCommentText(event.target.value)} placeholder={replyTo ? 'Write a reply...' : 'Add a comment...'} style={{ flex: 1, minWidth: 0, padding: '8px 10px', border: '1px solid #E5E7EB', borderRadius: 8, outline: 'none' }} /><button type="submit" disabled={commentSubmitting} aria-label="Post comment" style={{ border: 0, background: '#8B1A1A', color: '#fff', borderRadius: 8, padding: '0 11px', cursor: commentSubmitting ? 'wait' : 'pointer' }}>{commentSubmitting ? '...' : <Send size={14} />}</button></form>}
       </div>
     </div>
   );

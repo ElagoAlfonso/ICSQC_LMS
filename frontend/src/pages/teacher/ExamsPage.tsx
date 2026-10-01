@@ -8,10 +8,14 @@ import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import QuestionBuilder from '../../components/QuestionBuilder';
 import { getExamValidationErrors, hasExamValidationErrors } from '../../utils/examValidation';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 
 const EXAM_TYPES = [
+  { value: 'prelim', label: 'Prelim Exam' },
+  { value: 'midterm', label: 'Midterm Exam' },
+  { value: 'summative', label: 'Summative Exam' },
+  { value: 'final', label: 'Final Exam' },
   { value: 'quiz', label: 'Quiz' },
   { value: 'periodical', label: 'Periodical' },
   { value: 'midterm', label: 'Midterm' },
@@ -25,6 +29,13 @@ const INITIAL_FORM = {
   examType: 'quiz', duration: '60', passingScore: '75',
   startDate: '', startTime: '08:00', endDate: '', endTime: '17:00', status: 'draft', randomizeQuestions: false,
 };
+
+const examTypeLabel = (examType: string) => ({
+  prelim: 'Prelim Exam', periodical: 'Periodical Exam', midterm: 'Midterm Exam',
+  summative: 'Summative Exam', final: 'Final Exam', finals: 'Final Exam',
+  quiz: 'Quiz', assignment: 'Assignment', formative: 'Formative Assessment',
+} as Record<string, string>)[examType] || 'Exam';
+const examStatusLabel = (status: Exam['status']) => status === 'pending_approval' ? 'Pending Admin Approval' : status.charAt(0).toUpperCase() + status.slice(1);
 
 const toDateInputValue = (value?: string | Date | null) => {
   if (!value) return '';
@@ -54,6 +65,7 @@ const toLocalDateTime = (date: string, time: string) => new Date(`${date}T${time
 export default function ExamsPage() {
   const { user } = useAuthStore();
   const navigate = useNavigate();
+  const location = useLocation();
   const [exams, setExams] = useState<Exam[]>([]);
   const [submissionCounts, setSubmissionCounts] = useState<Record<string, number>>({});
   const [pagination, setPagination] = useState<PaginationType>({ total: 0, page: 1, pages: 1, limit: 10 });
@@ -77,6 +89,7 @@ export default function ExamsPage() {
     return getExamValidationErrors({ form, questions, stage: step });
   }, [form, questions, qTab]);
   const hasValidation = hasExamValidationErrors(validationErrors);
+  const readOnlyExam = Boolean(editItem && editItem.status !== 'draft');
 
   useEffect(() => {
     const loadMeta = async () => {
@@ -145,6 +158,16 @@ export default function ExamsPage() {
 
   useEffect(() => { fetchExams(); }, [page, search, statusFilter]);
   useEffect(() => {
+    const launch = location.state as { openCreateExam?: boolean; examType?: string; classId?: string; subjectId?: string } | null;
+    if (!launch?.openCreateExam) return;
+    setEditItem(null);
+    setForm({ ...INITIAL_FORM, examType: launch.examType || 'quiz', class: launch.classId || '', subject: launch.subjectId || '' });
+    setQuestions([]);
+    setQTab('info');
+    setModalOpen(true);
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.key, location.pathname, location.state, navigate]);
+  useEffect(() => {
     const socket = io(import.meta.env.VITE_REALTIME_URL || window.location.origin, { withCredentials: true, transports: ['websocket', 'polling'] });
     const refresh = () => { void fetchExams(); };
     socket.on('academic:update', refresh);
@@ -181,7 +204,7 @@ export default function ExamsPage() {
   ];
   const classOptions = [{ value: '', label: 'Select Class / Section' }, ...classes.map(c => ({ value: c._id, label: `${getClassDisplay(c)}${c.gradeLevel ? ` (${c.gradeLevel})` : ''}` }))];
   const ayOptions = [{ value: '', label: 'Select Year' }, ...academicYears.map(ay => ({ value: ay._id, label: ay.name }))];
-  const statusOptions = [{ value: '', label: 'All Status' }, { value: 'draft', label: 'Draft' }, { value: 'published', label: 'Published' }, { value: 'closed', label: 'Closed' }];
+  const statusOptions = [{ value: '', label: 'All Status' }, { value: 'draft', label: 'Draft' }, { value: 'pending_approval', label: 'Pending Admin Approval' }, { value: 'published', label: 'Published' }, { value: 'closed', label: 'Closed' }];
 
   const handleClassChange = (nextClassId: string) => {
     const nextClass = classes.find((c) => c._id === nextClassId) as Class | undefined;
@@ -247,10 +270,10 @@ export default function ExamsPage() {
       const payload = { ...form, startDate: toLocalDateTime(form.startDate, form.startTime), endDate: toLocalDateTime(form.endDate, form.endTime), duration: parseInt(form.duration), passingScore: parseInt(form.passingScore), questions, createdBy: user?._id };
       if (editItem) {
         await examsApi.update(editItem._id, payload);
-        toast.success('Exam updated');
+        toast.success('Exam draft updated.');
       } else {
         await examsApi.create(payload);
-        toast.success('Exam created');
+        toast.success('Exam saved as draft.');
       }
       setModalOpen(false);
       fetchExams();
@@ -284,13 +307,13 @@ export default function ExamsPage() {
     { key: 'preview', label: 'Review' },
   ] as const;
 
-  const handlePublish = async (id: string) => {
+  const handleRequestApproval = async (exam: Exam) => {
     try {
-      await examsApi.publish(id);
-      toast.success('Exam published');
+      await examsApi.requestApproval(exam._id);
+      toast.success(`${examTypeLabel(exam.examType)} submitted for Admin approval.`);
       fetchExams();
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Failed to publish exam');
+      toast.error(err.response?.data?.message || 'Unable to request exam approval.');
     }
   };
 
@@ -332,7 +355,7 @@ export default function ExamsPage() {
     },
     {
       key: 'examType', label: 'Type', render: (e: Exam) => (
-        <Badge label={e.examType} color={e.examType === 'finals' ? 'red' : e.examType === 'midterm' ? 'yellow' : 'blue'} />
+        <Badge label={examTypeLabel(e.examType)} color={e.examType === 'final' || e.examType === 'finals' ? 'red' : e.examType === 'midterm' ? 'yellow' : 'blue'} />
       )
     },
     {
@@ -359,7 +382,7 @@ export default function ExamsPage() {
     },
     {
       key: 'status', label: 'Status', render: (e: Exam) => (
-        <Badge label={e.status} color={e.status === 'published' ? 'green' : e.status === 'draft' ? 'yellow' : 'gray'} />
+        <Badge label={examStatusLabel(e.status)} color={e.status === 'published' ? 'green' : e.status === 'draft' ? 'yellow' : e.status === 'pending_approval' ? 'blue' : 'gray'} />
       )
     },
     {
@@ -380,11 +403,11 @@ export default function ExamsPage() {
       key: 'actions', label: '', render: (e: Exam) => (
         <div style={{ display: 'flex', gap: '5px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
           <button onClick={(ev) => { ev.stopPropagation(); openEdit(e); }} style={{ padding: '5px 9px', background: '#EFF6FF', border: 'none', borderRadius: '6px', color: '#2563EB', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '3px', fontFamily: 'var(--font-body)' }}>
-            <Edit2 size={11} /> Edit
+            <Edit2 size={11} /> {e.status === 'draft' ? 'Edit' : 'View'}
           </button>
           {e.status === 'draft' && (
-            <button onClick={(ev) => { ev.stopPropagation(); handlePublish(e._id); }} style={{ padding: '5px 9px', background: '#D1FAE5', border: 'none', borderRadius: '6px', color: '#059669', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '3px', fontFamily: 'var(--font-body)' }}>
-              <Send size={11} /> Publish
+            <button onClick={(ev) => { ev.stopPropagation(); handleRequestApproval(e); }} style={{ padding: '5px 9px', background: '#DBEAFE', border: 'none', borderRadius: '6px', color: '#1D4ED8', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '3px', fontFamily: 'var(--font-body)' }}>
+              <Send size={11} /> Request Approval
             </button>
           )}
           {e.status === 'published' && (
@@ -392,9 +415,9 @@ export default function ExamsPage() {
               <Lock size={11} /> Close
             </button>
           )}
-          <button onClick={(ev) => { ev.stopPropagation(); setDeleteTarget(e); }} style={{ padding: '5px 9px', background: '#FEE2E2', border: 'none', borderRadius: '6px', color: '#DC2626', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '3px', fontFamily: 'var(--font-body)' }}>
+          {e.status === 'draft' && <button onClick={(ev) => { ev.stopPropagation(); setDeleteTarget(e); }} style={{ padding: '5px 9px', background: '#FEE2E2', border: 'none', borderRadius: '6px', color: '#DC2626', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '3px', fontFamily: 'var(--font-body)' }}>
             <Trash2 size={11} /> Delete
-          </button>
+          </button>}
         </div>
       )
     },
@@ -429,15 +452,16 @@ export default function ExamsPage() {
         <Pagination {...pagination} onChange={setPage} />
       </Card>
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editItem ? 'Edit Exam' : 'Create Exam'} width="600px"
-        footer={qTab === 'info'
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={readOnlyExam ? `View ${examTypeLabel(editItem!.examType)}` : editItem ? 'Edit Exam' : `Create ${examTypeLabel(form.examType)}`} width="600px"
+        footer={readOnlyExam ? <><Button variant="secondary" onClick={() => setModalOpen(false)}>Close</Button>{qTab !== 'info' && <Button variant="outline" onClick={() => setQTab(qTab === 'preview' ? 'settings' : qTab === 'settings' ? 'questions' : 'info')} icon={<ArrowLeft size={14} />}>Back</Button>}{qTab !== 'preview' && <Button onClick={() => setQTab(qTab === 'info' ? 'questions' : qTab === 'questions' ? 'settings' : 'preview')} icon={<ArrowRight size={14} />}>Continue</Button>}</> : qTab === 'info'
           ? <><Button variant="secondary" onClick={() => setModalOpen(false)}>Cancel</Button><Button onClick={continueToQuestions} icon={<ArrowRight size={14} />}>Continue to questions</Button></>
           : qTab === 'questions'
             ? <><Button variant="secondary" onClick={() => setQTab('info')} icon={<ArrowLeft size={14} />}>Back</Button><Button onClick={continueToSettings}>Continue to settings</Button></>
             : qTab === 'settings'
               ? <><Button variant="secondary" onClick={() => setQTab('questions')} icon={<ArrowLeft size={14} />}>Back</Button><Button onClick={continueToPreview}>Preview exam</Button></>
-              : <><Button variant="secondary" onClick={() => setQTab('settings')} icon={<ArrowLeft size={14} />}>Back</Button><Button loading={saving} onClick={handleSave}>{editItem ? 'Save changes' : 'Publish draft'}</Button></>}
+              : <><Button variant="secondary" onClick={() => setQTab('settings')} icon={<ArrowLeft size={14} />}>Back</Button><Button loading={saving} onClick={handleSave}>{editItem ? 'Save changes' : 'Save draft'}</Button></>}
       >
+        {readOnlyExam && <p style={{ margin: '0 0 12px', padding: '9px 12px', borderRadius: 8, background: editItem?.status === 'pending_approval' ? '#EFF6FF' : '#F0FDF4', color: editItem?.status === 'pending_approval' ? '#1D4ED8' : '#166534', fontSize: '0.8rem', fontWeight: 600 }}>{examStatusLabel(editItem!.status)}</p>}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--gray-200)', marginBottom: 18, paddingBottom: 10 }}>
           <div style={{ display: 'flex', borderBottom: '1px solid var(--gray-200)', flex: 1, alignItems: 'center' }}>
             {wizardSteps.map((step) => (
@@ -460,25 +484,25 @@ export default function ExamsPage() {
         </div>
         {qTab === 'info' && <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div style={{ background: '#F8FAFC', border: '1px solid var(--gray-200)', borderRadius: '12px', padding: '14px 16px' }}>
-            <Input label="Exam Title *" placeholder="e.g. Q1 Science Quiz" value={form.title} error={validationErrors.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+            <Input label="Exam Title *" placeholder="e.g. Q1 Science Quiz" value={form.title} error={validationErrors.title} disabled={readOnlyExam} onChange={(e) => setForm({ ...form, title: e.target.value })} />
           </div>
           <div style={{ background: '#F8FAFC', border: '1px solid var(--gray-200)', borderRadius: '12px', padding: '14px 16px' }}>
-            <Input label="Description" placeholder="Optional description or instructions" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+            <Input label="Description" placeholder="Optional description or instructions" value={form.description} disabled={readOnlyExam} onChange={(e) => setForm({ ...form, description: e.target.value })} />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
             <div style={{ background: '#F8FAFC', border: '1px solid var(--gray-200)', borderRadius: '12px', padding: '14px 16px' }}>
-              <Select label="Class / Section *" value={form.class} error={validationErrors.class} onChange={(e) => handleClassChange(e.target.value)} options={classOptions} />
+              <Select label="Class / Section *" value={form.class} error={validationErrors.class} disabled={readOnlyExam} onChange={(e) => handleClassChange(e.target.value)} options={classOptions} />
             </div>
             <div style={{ background: '#F8FAFC', border: '1px solid var(--gray-200)', borderRadius: '12px', padding: '14px 16px' }}>
-              <Select label="Subject *" value={form.subject} error={validationErrors.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} options={subjectOptions} disabled={!form.class || !subjectOptions.some((s) => s.value && s.value !== '')} />
+              <Select label="Subject *" value={form.subject} error={validationErrors.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} options={subjectOptions} disabled={readOnlyExam || !form.class || !subjectOptions.some((s) => s.value && s.value !== '')} />
             </div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
             <div style={{ background: '#F8FAFC', border: '1px solid var(--gray-200)', borderRadius: '12px', padding: '14px 16px' }}>
-              <Select label="Exam Type" value={form.examType} onChange={(e) => setForm({ ...form, examType: e.target.value })} options={EXAM_TYPES} />
+              <Select label="Exam Type" value={form.examType} disabled={readOnlyExam} onChange={(e) => setForm({ ...form, examType: e.target.value })} options={EXAM_TYPES} />
             </div>
             <div style={{ background: '#F8FAFC', border: '1px solid var(--gray-200)', borderRadius: '12px', padding: '14px 16px' }}>
-              <Select label="Academic Year *" value={form.academicYear} error={validationErrors.academicYear} onChange={(e) => setForm({ ...form, academicYear: e.target.value })} options={ayOptions} />
+              <Select label="Academic Year *" value={form.academicYear} error={validationErrors.academicYear} disabled={readOnlyExam} onChange={(e) => setForm({ ...form, academicYear: e.target.value })} options={ayOptions} />
             </div>
           </div>
         </div>}
@@ -488,25 +512,26 @@ export default function ExamsPage() {
         </div>}
         {qTab === 'settings' && <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            <Input label="Duration (minutes) *" type="number" value={form.duration} error={validationErrors.duration} onChange={(e) => setForm({ ...form, duration: e.target.value })} />
-            <Input label="Passing Score (%) *" type="number" min="0" max="100" value={form.passingScore} error={validationErrors.passingScore} onChange={(e) => setForm({ ...form, passingScore: e.target.value })} />
+            <Input label="Duration (minutes) *" type="number" value={form.duration} error={validationErrors.duration} disabled={readOnlyExam} onChange={(e) => setForm({ ...form, duration: e.target.value })} />
+            <Input label="Passing Score (%) *" type="number" min="0" max="100" value={form.passingScore} error={validationErrors.passingScore} disabled={readOnlyExam} onChange={(e) => setForm({ ...form, passingScore: e.target.value })} />
           </div>
           <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 10, background: '#F8FAFC', border: '1px solid var(--gray-200)', color: 'var(--gray-700)', fontSize: '0.85rem', fontWeight: 600 }}>
-            <input type="checkbox" checked={form.randomizeQuestions} onChange={(e) => setForm({ ...form, randomizeQuestions: e.target.checked })} />
+            <input type="checkbox" checked={form.randomizeQuestions} disabled={readOnlyExam} onChange={(e) => setForm({ ...form, randomizeQuestions: e.target.checked })} />
             Randomize Questions
           </label>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            <Input label="Start Date *" type="date" value={form.startDate} error={validationErrors.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} />
-            <Input label="Start Time *" type="time" value={form.startTime} error={validationErrors.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} />
-            <Input label="End Date *" type="date" value={form.endDate} error={validationErrors.endDate || validationErrors.dateRange} onChange={(e) => setForm({ ...form, endDate: e.target.value })} />
-            <Input label="End Time *" type="time" value={form.endTime} error={validationErrors.endTime || validationErrors.dateRange} onChange={(e) => setForm({ ...form, endTime: e.target.value })} />
+            <Input label="Start Date *" type="date" value={form.startDate} error={validationErrors.startDate} disabled={readOnlyExam} onChange={(e) => setForm({ ...form, startDate: e.target.value })} />
+            <Input label="Start Time *" type="time" value={form.startTime} error={validationErrors.startTime} disabled={readOnlyExam} onChange={(e) => setForm({ ...form, startTime: e.target.value })} />
+            <Input label="End Date *" type="date" value={form.endDate} error={validationErrors.endDate || validationErrors.dateRange} disabled={readOnlyExam} onChange={(e) => setForm({ ...form, endDate: e.target.value })} />
+            <Input label="End Time *" type="time" value={form.endTime} error={validationErrors.endTime || validationErrors.dateRange} disabled={readOnlyExam} onChange={(e) => setForm({ ...form, endTime: e.target.value })} />
           </div>
           <div style={{ padding: '12px 14px', borderRadius: 10, background: '#F8FAFC', border: '1px solid var(--gray-200)' }}>
             <p style={{ margin: 0, fontSize: '0.8rem', fontWeight: 600, color: 'var(--gray-700)' }}>Exam rules</p>
             <ul style={{ margin: '8px 0 0 18px', padding: 0, color: 'var(--gray-600)', fontSize: '0.76rem', lineHeight: 1.8 }}>
               <li>Students can only access the exam after the scheduled availability.</li>
               <li>Time limit and passing score remain enforced in the LMS.</li>
-              <li>Draft exams remain editable until the teacher publishes them.</li>
+              <li>Draft exams remain editable until the teacher requests Admin approval.</li>
+              <li>An Admin must approve an exam before students can access it.</li>
             </ul>
           </div>
         </div>}

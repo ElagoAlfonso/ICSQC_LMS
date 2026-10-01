@@ -101,8 +101,8 @@ export interface Exam {
   randomizeQuestions?: boolean;
   startDate: string;
   endDate: string;
-  examType: 'quiz' | 'periodical' | 'midterm' | 'finals' | 'assignment' | 'formative';
-  status: 'draft' | 'published' | 'closed';
+  examType: 'quiz' | 'prelim' | 'periodical' | 'midterm' | 'summative' | 'final' | 'finals' | 'assignment' | 'formative';
+  status: 'draft' | 'pending_approval' | 'scheduled' | 'published' | 'closed' | 'archived';
   passingScore: number;
 }
 

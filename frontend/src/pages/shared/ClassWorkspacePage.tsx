@@ -24,9 +24,16 @@ const CLASSWORK_TYPES: Array<{ value: Classwork['type']; label: string; descript
   { value: 'activity', label: 'Activity', description: 'Guide a practice task, exercise, or class activity.', prompt: 'What should students do during this activity?' },
   { value: 'assessment', label: 'Assessment', description: 'Check student understanding with a graded task.', prompt: 'What should students demonstrate or answer?' },
 ];
+const QUIZ_MENU_TYPE = { value: 'quiz' as const, label: 'Quiz' };
 
 const classworkTypeLabel = (type: Classwork['type']) => CLASSWORK_TYPES.find((item) => item.value === type)?.label || type;
-const CLASSWORK_MENU_TYPES = CLASSWORK_TYPES.filter((item) => item.value !== 'assignment' && item.value !== 'activity');
+const examTypeLabel = (type: Exam['examType']) => ({
+  prelim: 'Prelim Exam', periodical: 'Periodical Exam', midterm: 'Midterm Exam',
+  summative: 'Summative Exam', final: 'Final Exam', finals: 'Final Exam',
+  quiz: 'Quiz', assignment: 'Assignment', formative: 'Formative Assessment',
+} as Record<string, string>)[type] || 'Exam';
+const examStatusLabel = (status: Exam['status']) => status === 'pending_approval' ? 'Pending Admin Approval' : status.charAt(0).toUpperCase() + status.slice(1);
+const CLASSWORK_MENU_TYPES = [...CLASSWORK_TYPES.filter((item) => item.value !== 'assignment' && item.value !== 'activity'), QUIZ_MENU_TYPE];
 const isMaterialType = (type: Classwork['type']) => type === 'syllabus' || type === 'lesson';
 const materialMenuItemStyle = { display: 'flex', alignItems: 'center', gap: 14, width: '100%', padding: '11px 14px', border: 0, background: '#fff', color: '#1F2937', fontSize: '0.88rem', textAlign: 'left' as const, cursor: 'pointer' };
 
@@ -248,7 +255,7 @@ export default function ClassWorkspacePage() {
     return () => { socket.off('academic:update', refresh); socket.disconnect(); };
   }, [classId, user?.role]);
   useEffect(() => {
-    if (!isTeacher && user?.role !== 'admin') {
+    if (!isTeacher) {
       setCalendarChecking(false);
       return;
     }
@@ -260,7 +267,8 @@ export default function ClassWorkspacePage() {
   useEffect(() => { const timer = window.setInterval(() => setClassMeet(current => current ? { ...current } : null), 30000); return () => window.clearInterval(timer); }, []);
 
   const createClassMeet = async () => {
-    if ((isTeacher || user?.role === 'admin') && !calendarConnected) {
+    if (!isTeacher) return;
+    if (!calendarConnected) {
       toast.error('Connect your Google Calendar before creating a Meet.');
       googleApi.connectCalendar();
       return;
@@ -416,7 +424,8 @@ export default function ClassWorkspacePage() {
   const publishClasswork = async (classwork: Classwork) => {
     try {
       await classworkApi.publish(classwork._id);
-      toast.success('Classwork published.');
+      const publishType = classwork.type === 'asynchronous' ? 'Assignment' : classworkTypeLabel(classwork.type);
+      toast.success(`${publishType} published.`);
       await load();
     } catch (error: any) {
       toast.error(error.response?.data?.error || error.response?.data?.message || 'Unable to publish classwork.');
@@ -716,7 +725,7 @@ export default function ClassWorkspacePage() {
 
   const renderStream = () => (
     <div style={{ display: 'grid', gap: 18 }}>
-      {(isTeacher || user?.role === 'admin') && (
+      {isTeacher && (
         <Card>
           <button
             type="button"
@@ -820,13 +829,13 @@ export default function ClassWorkspacePage() {
         </div>
       </Modal>
 
-      <Card title="Google Meet" action={(isTeacher || user?.role === 'admin') && (!classMeet || statusFor(classMeet) === 'Finished') ? <Button size="sm" icon={<Plus size={15} />} onClick={() => setMeetModalOpen(true)}>Create Meet</Button> : undefined}>
+      <Card title="Google Meet" action={isTeacher && (!classMeet || statusFor(classMeet) === 'Finished') ? <Button size="sm" icon={<Plus size={15} />} onClick={() => setMeetModalOpen(true)}>Create Meet</Button> : undefined}>
         {!classMeet ? (
-          <p style={{ color: '#64748B', margin: 0 }}>{isTeacher || user?.role === 'admin' ? 'Create a Google Meet for this class.' : 'No active Google Meet for this class.'}</p>
+          <p style={{ color: '#64748B', margin: 0 }}>{isTeacher ? 'Create a Google Meet for this class.' : 'No active Google Meet for this class.'}</p>
         ) : statusFor(classMeet) === 'Finished' ? (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}><p style={{ color: '#64748B', margin: 0 }}>This Google Meet has ended.</p>{(isTeacher || user?.role === 'admin') && <Button size="sm" onClick={() => setMeetModalOpen(true)}>Create New Meet</Button>}</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}><p style={{ color: '#64748B', margin: 0 }}>This Google Meet has ended.</p>{isTeacher && <Button size="sm" onClick={() => setMeetModalOpen(true)}>Create New Meet</Button>}</div>
         ) : (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}><Video size={20} color="#059669" /><div style={{ flex: 1, minWidth: 180 }}><strong>{classMeet.meetingTitle}</strong><div style={{ color: '#64748B', fontSize: '.8rem', marginTop: 4 }}>This class is currently using Google Meet.</div></div><Badge label="Live" color="green" /><Button size="sm" icon={<ExternalLink size={14} />} onClick={() => window.open(classMeet.meetLink, '_blank', 'noopener,noreferrer')}>Join Meet</Button>{(isTeacher || user?.role === 'admin') && <Button size="sm" variant="danger" onClick={endClassMeet}>End Meet</Button>}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}><Video size={20} color="#059669" /><div style={{ flex: 1, minWidth: 180 }}><strong>{classMeet.meetingTitle}</strong><div style={{ color: '#64748B', fontSize: '.8rem', marginTop: 4 }}>This class is currently using Google Meet.</div></div><Badge label="Live" color="green" /><Button size="sm" icon={<ExternalLink size={14} />} onClick={() => window.open(classMeet.meetLink, '_blank', 'noopener,noreferrer')}>Join Meet</Button>{isTeacher && <Button size="sm" variant="danger" onClick={endClassMeet}>End Meet</Button>}</div>
         )}
       </Card>
 
@@ -837,7 +846,7 @@ export default function ClassWorkspacePage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             {streamItems.map((streamItem) => {
               if (streamItem.kind === 'announcement') {
-                return <AnnouncementCard key={`announcement-${streamItem.item._id}`} ann={streamItem.item} targetColor={() => 'gray'} />;
+                return <AnnouncementCard key={`announcement-${streamItem.item._id}`} ann={streamItem.item} targetColor={() => 'gray'} readOnly={user?.role === 'admin'} />;
               }
               const classwork = streamItem.item;
                 const author = typeof classwork.createdBy === 'object' ? classwork.createdBy.name : 'Teacher';
@@ -849,7 +858,7 @@ export default function ClassWorkspacePage() {
                     <div style={{ marginTop: 4, color: '#64748B', fontSize: '0.74rem' }}>{format(new Date(postedDate), 'MMM d')}{user?.role !== 'student' ? ` · ${classwork.status}` : ''}</div>
                     {classwork.description && <p style={{ margin: '9px 0 0', color: '#475569', fontSize: '0.82rem', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{classwork.description}</p>}
                     {(classwork.attachments?.length > 0 || classwork.resourceLinks?.length > 0) && <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 8, color: '#64748B', fontSize: '0.74rem' }}><FileUp size={14} />{classwork.attachments.length + (classwork.resourceLinks?.length || 0)} lesson material{classwork.attachments.length + (classwork.resourceLinks?.length || 0) === 1 ? '' : 's'}</div>}
-                    <Button size="sm" variant="outline" style={{ marginTop: 10 }} onClick={() => navigate(`${user?.role === 'teacher' ? '/teacher' : '/student'}/classes/${classId}/classwork/${classwork._id}`)}>Open classwork</Button>
+                    <Button size="sm" variant="outline" style={{ marginTop: 10 }} onClick={() => navigate(`${user?.role === 'teacher' ? '/teacher' : user?.role === 'admin' ? '/admin' : '/student'}/classes/${classId}/classwork/${classwork._id}`)}>Open classwork</Button>
                   </div>
                 </article>;
             })}
@@ -860,6 +869,7 @@ export default function ClassWorkspacePage() {
   );
 
   const renderClasswork = () => (
+    <>
     <Card
       title="Classwork"
       subtitle="Assignments, activities, and assessments for this class"
@@ -868,9 +878,16 @@ export default function ClassWorkspacePage() {
           Create <ChevronDown size={14} />
         </Button>
         {createMenuOpen && <div role="menu" aria-label="Create classwork" style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 30, width: 230, padding: 6, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10, boxShadow: '0 12px 30px rgba(15, 23, 42, .16)' }}>
-          {CLASSWORK_MENU_TYPES.map((type) => <button key={type.value} type="button" role="menuitem" onClick={() => openClassworkComposer(type.value)} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, width: '100%', padding: '10px 9px', border: 0, borderRadius: 7, background: '#fff', color: '#1F2937', cursor: 'pointer', textAlign: 'left' }} onMouseEnter={(event) => { event.currentTarget.style.background = '#FFF7F7'; }} onMouseLeave={(event) => { event.currentTarget.style.background = '#fff'; }}>
+          {CLASSWORK_MENU_TYPES.map((type) => <button key={type.value} type="button" role="menuitem" onClick={() => {
+            setCreateMenuOpen(false);
+            if (type.value === 'quiz') {
+              navigate('/teacher/exams', { state: { openCreateExam: true, examType: 'quiz', classId, subjectId: primarySubject?._id } });
+              return;
+            }
+            openClassworkComposer(type.value);
+          }} style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '10px 9px', border: 0, borderRadius: 7, background: '#fff', color: '#1F2937', cursor: 'pointer', textAlign: 'left' }} onMouseEnter={(event) => { event.currentTarget.style.background = '#FFF7F7'; }} onMouseLeave={(event) => { event.currentTarget.style.background = '#fff'; }}>
             <ClipboardList size={17} color="#7a1010" style={{ marginTop: 1, flexShrink: 0 }} />
-            <span><strong style={{ display: 'block', fontSize: '0.84rem', fontWeight: 600 }}>{type.label}</strong><small style={{ display: 'block', marginTop: 2, color: '#64748B', fontSize: '0.72rem', lineHeight: 1.4 }}>{type.description}</small></span>
+            <strong style={{ display: 'block', fontSize: '0.84rem', fontWeight: 600 }}>{type.label}</strong>
           </button>)}
         </div>}
       </div> : undefined}
@@ -902,7 +919,7 @@ export default function ClassWorkspacePage() {
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
-                  <Button size="sm" variant="outline" onClick={() => navigate(`${isTeacher ? '/teacher' : '/student'}/classes/${classId}/classwork/${classwork._id}`)}>Open</Button>
+                  <Button size="sm" variant="outline" onClick={() => navigate(`${isTeacher ? '/teacher' : user?.role === 'admin' ? '/admin' : '/student'}/classes/${classId}/classwork/${classwork._id}`)}>Open</Button>
                   {isTeacher && classwork.status === 'draft' && <Button size="sm" onClick={() => publishClasswork(classwork)}>Publish</Button>}
                   {isTeacher && <Button size="sm" variant="danger" icon={<Trash2 size={14} />} onClick={() => deleteClasswork(classwork)}>Delete</Button>}
                 </div>
@@ -987,6 +1004,21 @@ export default function ClassWorkspacePage() {
         )}
       </Modal>
     </Card>
+    {user?.role === 'admin' && exams.length > 0 && <Card title="Exams" subtitle="Read-only exam information for this classroom">
+      <div style={{ display: 'grid', gap: 8 }}>
+        {exams.map((exam) => <div key={exam._id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', alignItems: 'center', gap: 12, padding: '9px 0', borderBottom: '1px solid #E5E7EB' }}>
+          <div style={{ minWidth: 0 }}>
+            <strong style={{ display: 'block', color: '#111827', fontSize: '0.86rem' }}>{exam.title}</strong>
+            <span style={{ display: 'block', marginTop: 4, color: '#64748B', fontSize: '0.76rem' }}>{examTypeLabel(exam.examType)} · {exam.questions.length} questions · {exam.duration} min · {format(new Date(exam.startDate), 'MMM d, yyyy')}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <Badge label={examStatusLabel(exam.status)} color={exam.status === 'published' ? 'green' : exam.status === 'pending_approval' ? 'blue' : 'yellow'} />
+            <Button size="sm" variant="outline" onClick={() => navigate('/admin/exams', { state: { reviewExamId: exam._id } })}>View exam</Button>
+          </div>
+        </div>)}
+      </div>
+    </Card>}
+    </>
   );
 
   const renderPeople = () => (
@@ -1054,9 +1086,11 @@ export default function ClassWorkspacePage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-      <button onClick={() => navigate(isTeacher ? '/teacher/classes' : '/student/classes')} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: 0, background: 'none', color: '#7a1010', cursor: 'pointer', padding: 0, fontWeight: 600 }}>
-        <ArrowLeft size={16} /> Back to My Classes
+      <button onClick={() => navigate(user?.role === 'admin' ? '/admin/classes' : isTeacher ? '/teacher/classes' : '/student/classes')} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: 0, background: 'none', color: '#7a1010', cursor: 'pointer', padding: 0, fontWeight: 600 }}>
+        <ArrowLeft size={16} /> {user?.role === 'admin' ? 'Back to Classes' : 'Back to My Classes'}
       </button>
+
+      {user?.role === 'admin' && <div role="status" style={{ padding: '10px 14px', border: '1px solid #BFDBFE', borderRadius: 8, background: '#EFF6FF', color: '#1E40AF', fontSize: '0.84rem', fontWeight: 600 }}>Read-only classroom monitoring</div>}
 
       <section style={{ background: 'linear-gradient(135deg, #7a1010 0%, #9d2a2a 100%)', color: '#fff', borderRadius: 18, padding: '26px 24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
@@ -1103,8 +1137,8 @@ export default function ClassWorkspacePage() {
       {activeTab === 'grades' && isTeacher && renderGrades()}
       {activeTab === 'people' && renderPeople()}
 
-      <Modal open={meetModalOpen} onClose={() => setMeetModalOpen(false)} title="Create Google Meet" footer={<><Button variant="secondary" onClick={() => setMeetModalOpen(false)}>Cancel</Button>{(isTeacher || user?.role === 'admin') && !calendarConnected ? <Button loading={calendarChecking} onClick={googleApi.connectCalendar}>Connect Google Calendar</Button> : <Button loading={creatingMeet} onClick={createClassMeet}>Create Google Meet</Button>}</>}>
-        <div style={{ display: 'grid', gap: 8 }}><span style={{ fontSize: '0.8rem', color: 'var(--gray-500)' }}>Class</span><strong style={{ color: 'var(--gray-900)' }}>{classDoc ? `${classDoc.name} - ${classDoc.section}` : 'Current class'}</strong><p style={{ margin: '8px 0 0', color: '#64748B', fontSize: '0.85rem' }}>{(isTeacher || user?.role === 'admin') && !calendarConnected ? 'Connect your Google Calendar first. The Meet will be created as a Calendar event after authorization.' : 'A Google Meet will be created for this class using your connected Google account.'}</p></div>
+      <Modal open={meetModalOpen && isTeacher} onClose={() => setMeetModalOpen(false)} title="Create Google Meet" footer={<><Button variant="secondary" onClick={() => setMeetModalOpen(false)}>Cancel</Button>{isTeacher && !calendarConnected ? <Button loading={calendarChecking} onClick={googleApi.connectCalendar}>Connect Google Calendar</Button> : isTeacher ? <Button loading={creatingMeet} onClick={createClassMeet}>Create Google Meet</Button> : null}</>}>
+        <div style={{ display: 'grid', gap: 8 }}><span style={{ fontSize: '0.8rem', color: 'var(--gray-500)' }}>Class</span><strong style={{ color: 'var(--gray-900)' }}>{classDoc ? `${classDoc.name} - ${classDoc.section}` : 'Current class'}</strong><p style={{ margin: '8px 0 0', color: '#64748B', fontSize: '0.85rem' }}>{isTeacher && !calendarConnected ? 'Connect your Google Calendar first. The Meet will be created as a Calendar event after authorization.' : 'A Google Meet will be created for this class using your connected Google account.'}</p></div>
       </Modal>
       <Modal open={Boolean(editingGrade)} onClose={() => !savingGrade && setEditingGrade(null)} title="Enter grade" footer={<><Button variant="secondary" disabled={savingGrade} onClick={() => setEditingGrade(null)}>Cancel</Button><Button loading={savingGrade} onClick={saveGradeEntry}>Save grade</Button></>}>
         {editingGrade && <div style={{ display: 'grid', gap: 14 }}>

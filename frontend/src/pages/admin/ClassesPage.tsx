@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Search, Edit2, Trash2, GraduationCap, Users, Check, X } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, GraduationCap, Users, Check, X, Eye } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { Card, Button, Badge, DataTable, Pagination, Modal, Input, Select, EmptyState } from '../../components/ui';
 import { classesApi, academicYearsApi, usersApi, subjectsApi } from '../../utils/api';
 import type { Class, AcademicYear, User, Pagination as PaginationType, ClassRequest, Subject } from '../../types';
@@ -10,6 +11,7 @@ const GRADE_LEVELS = ['Grade 7','Grade 8','Grade 9','Grade 10','Grade 11','Grade
 const INITIAL_FORM = { name: '', section: '', gradeLevel: 'Grade 7', academicYear: '', adviser: '', isActive: true, subjects: [] as string[] };
 
 export default function ClassesPage() {
+  const navigate = useNavigate();
   const [classes, setClasses] = useState<Class[]>([]);
   const [requests, setRequests] = useState<ClassRequest[]>([]);
   const [pagination, setPagination] = useState<PaginationType>({ total: 0, page: 1, pages: 1, limit: 10 });
@@ -172,6 +174,9 @@ export default function ClassesPage() {
     {
       key: 'actions', label: '', render: (c: Class) => (
         <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+          <button onClick={(e) => { e.stopPropagation(); navigate(`/admin/classes/${c._id}`); }} title="Monitor classroom" style={{ padding: '5px 10px', background: '#F0FDF4', border: 'none', borderRadius: '6px', color: '#15803D', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '4px', fontFamily: 'var(--font-body)' }}>
+            <Eye size={12} /> Monitor
+          </button>
           <button onClick={(e) => { e.stopPropagation(); openEdit(c); }} style={{ padding: '5px 10px', background: '#EFF6FF', border: 'none', borderRadius: '6px', color: '#2563EB', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '4px', fontFamily: 'var(--font-body)' }}>
             <Edit2 size={12} /> Edit
           </button>

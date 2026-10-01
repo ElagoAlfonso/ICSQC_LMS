@@ -91,6 +91,8 @@ export default function App() {
             <Route path="/admin/users"          element={<UsersPage />} />
             <Route path="/admin/academic-years" element={<AcademicYearsPage />} />
             <Route path="/admin/classes"        element={<ClassesPage />} />
+            <Route path="/admin/classes/:classId" element={<TeacherClassWorkspace />} />
+            <Route path="/admin/classes/:classId/classwork/:classworkId" element={<TeacherClassworkDetail />} />
             <Route path="/admin/subjects"       element={<SubjectsPage />} />
             <Route path="/admin/exams"          element={<AdminExamsPage />} />
             <Route path="/admin/report-cards"   element={<ReportCardsPage />} />

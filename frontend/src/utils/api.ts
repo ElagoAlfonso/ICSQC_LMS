@@ -96,6 +96,7 @@ export const examsApi = {
   update: (id: string, data: any) => api.put(`/exams/${id}`, data),
   delete: (id: string) => api.delete(`/exams/${id}`),
   publish: (id: string) => api.patch(`/exams/${id}/publish`),
+  requestApproval: (id: string) => api.patch(`/exams/${id}/request-approval`),
   close: (id: string) => api.patch(`/exams/${id}/close`),
 };
 
