@@ -45,11 +45,21 @@ const validateTeacherClassworkAccess = async (user: AuthRequest["user"], classId
 
 const canManageClasswork = async (user: AuthRequest["user"], classId: any, createdBy: any) => {
   if (!user) return false;
-  if (user.role === "admin") return true;
   if (user.role !== "teacher") return false;
   if (createdBy?.toString() === user._id.toString()) return true;
   return Boolean(await Class.exists({ _id: classId, $or: [{ adviser: user._id }, { coTeachers: user._id }] }));
 };
+const canViewClasswork = async (user: AuthRequest["user"], classId: any, createdBy: any) =>
+  user?.role === "admin" || await canManageClasswork(user, classId, createdBy);
+
+const classworkDisplayType = (type: string) => {
+    if (type === "asynchronous") return "Assignment";
+    if (type === "performance_task") return "Performance Task";
+    if (type === "assessment") return "Assessment";
+    if (type === "syllabus") return "Course Syllabus / Curriculum Guide";
+    if (type === "lesson") return "Daily Lesson";
+    return type.charAt(0).toUpperCase() + type.slice(1);
+  };
 
 const publicAttachments = (attachments: any[] = []) => attachments.map(({ storageName, storagePath, ...attachment }) => attachment);
 const MAX_RESOURCE_LINKS = 10;
@@ -134,6 +144,10 @@ export const createClasswork = async (req: AuthRequest, res: Response): Promise<
     const parsedQuestions = typeof req.body.questions === "string"
       ? JSON.parse(req.body.questions || "[]")
       : req.body.questions;
+    if (type === "assessment" && (!Array.isArray(parsedQuestions) || parsedQuestions.length === 0)) {
+      res.status(400).json({ message: "Add at least one question to this assessment." });
+      return;
+    }
     const parsedResourceLinks = typeof req.body.resourceLinks === "string"
       ? JSON.parse(req.body.resourceLinks || "[]")
       : (req.body.resourceLinks || []);
@@ -252,7 +266,11 @@ export const getClasswork = async (req: AuthRequest, res: Response): Promise<voi
       .sort({ dueDate: 1 })
       .lean();
 
-    const safeClasswork = classwork.map((item: any) => ({ ...item, attachments: publicAttachments(item.attachments) }));
+    const safeClasswork = classwork.map((item: any) => ({
+      ...item,
+      attachments: publicAttachments(item.attachments),
+      ...(req.user?.role === "student" ? { questions: (item.questions || []).map((question: any) => ({ ...question, correctAnswer: "" })) } : {}),
+    }));
 
     res.status(200).json({
       message: "Classwork retrieved successfully",
@@ -298,7 +316,7 @@ export const getClassworkById = async (req: AuthRequest, res: Response): Promise
       (classwork as any).questionPoints = Array.isArray(classwork.questions)
         ? classwork.questions.map((question: any) => question.points ?? 1)
         : [];
-      (classwork as any).questions = [];
+      (classwork as any).questions = ((classwork as any).questions || []).map((question: any) => ({ ...question, correctAnswer: "" }));
       (classwork as any).attachments = publicAttachments((classwork as any).attachments);
       const submitted = await ClassworkSubmission.exists({ classwork: classworkId, student: req.user._id });
     } else {
@@ -326,7 +344,7 @@ export const updateClasswork = async (req: AuthRequest, res: Response): Promise<
       return;
     }
 
-    // Only creator/admin can edit
+    // Only the creator or an assigned teacher can edit.
     if (!(await canManageClasswork(req.user, classwork.class, classwork.createdBy))) {
       res.status(403).json({ message: "You do not have permission to edit this classwork" });
       return;
@@ -370,7 +388,7 @@ export const deleteClasswork = async (req: AuthRequest, res: Response): Promise<
       return;
     }
 
-    // Only creator/admin can delete
+    // Only the creator or an assigned teacher can delete.
     if (!(await canManageClasswork(req.user, classwork.class, classwork.createdBy))) {
       res.status(403).json({ message: "You do not have permission to delete this classwork" });
       return;
@@ -432,7 +450,7 @@ export const publishClasswork = async (req: AuthRequest, res: Response): Promise
       try {
         await createNotifications(classDoc.students, {
           title: "New Classwork",
-          message: `${classwork.type}: ${classwork.title} has been assigned`,
+          message: `${classworkDisplayType(classwork.type)}: ${classwork.title} has been assigned`,
           type: "announcement",
           relatedResource: classwork._id,
           relatedClass: classwork.class,
@@ -508,6 +526,14 @@ export const submitClasswork = async (req: AuthRequest, res: Response): Promise<
     if (classwork.type === "syllabus" || classwork.type === "lesson") {
       res.status(400).json({ message: "This material does not accept submissions." });
       return;
+    }
+    if (classwork.type === "assessment") {
+      let answers: unknown;
+      try { answers = JSON.parse(String(submittedNotes || "")); } catch { answers = null; }
+      if (!Array.isArray(answers) || answers.length !== classwork.questions?.length || answers.some((answer) => typeof answer !== "string" || !answer.trim())) {
+        res.status(400).json({ message: "Answer every assessment question before submitting." });
+        return;
+      }
     }
 
     const now = new Date();
@@ -634,7 +660,7 @@ export const getSubmissions = async (req: AuthRequest, res: Response): Promise<v
     }
 
     // Only teacher/admin who created can view
-    if (!(await canManageClasswork(req.user, classwork.class, classwork.createdBy))) {
+    if (!(await canViewClasswork(req.user, classwork.class, classwork.createdBy))) {
       res.status(403).json({ message: "You do not have permission to view submissions" });
       return;
     }
@@ -664,7 +690,7 @@ export const getClassworkGrades = async (req: AuthRequest, res: Response): Promi
       res.status(404).json({ message: "Classwork not found" });
       return;
     }
-    if (!(await canManageClasswork(req.user, classwork.class, classwork.createdBy))) {
+    if (!(await canViewClasswork(req.user, classwork.class, classwork.createdBy))) {
       res.status(403).json({ message: "You do not have permission to view these grades" });
       return;
     }
@@ -792,9 +818,20 @@ export const getMySubmissions = async (req: AuthRequest, res: Response): Promise
       .sort({ submittedAt: -1 })
       .lean();
 
+    const safeSubmissions = submissions.map((submission: any) => {
+      if (!submission.classwork || typeof submission.classwork !== "object") return submission;
+      return {
+        ...submission,
+        classwork: {
+          ...submission.classwork,
+          questions: (submission.classwork.questions || []).map((question: any) => ({ ...question, correctAnswer: "" })),
+        },
+      };
+    });
+
     res.status(200).json({
       message: "Your submissions retrieved successfully",
-      submissions,
+      submissions: safeSubmissions,
     });
   } catch (error) {
     console.error("Error fetching submissions:", error);
