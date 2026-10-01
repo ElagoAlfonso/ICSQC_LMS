@@ -25,8 +25,8 @@ const router = express.Router();
 //  CLASSWORK CRUD OPERATIONS
 // ═══════════════════════════════════════════════════════════════════════════
 
-// Create classwork (Teacher/Admin only)
-router.post("/", protect, authorize(["teacher", "admin"]), parseClassworkAttachments, createClasswork);
+// Classroom management remains teacher-only; Admin access is read-only monitoring.
+router.post("/", protect, authorize(["teacher"]), parseClassworkAttachments, createClasswork);
 
 // Get all classwork (with filters)
 router.get("/", protect, getClasswork);
@@ -41,36 +41,36 @@ router.get("/:classworkId/attachments/:attachmentId", protect, downloadClasswork
 // Get single classwork by ID
 router.get("/:classworkId", protect, getClassworkById);
 
-// Update classwork (Teacher/Admin only)
-router.put("/:classworkId", protect, updateClasswork);
+// Update classwork (Teacher only)
+router.put("/:classworkId", protect, authorize(["teacher"]), updateClasswork);
 
-// Delete classwork (Teacher/Admin only)
-router.delete("/:classworkId", protect, deleteClasswork);
+// Delete classwork (Teacher only)
+router.delete("/:classworkId", protect, authorize(["teacher"]), deleteClasswork);
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  CLASSWORK PUBLISHING/SCHEDULING
 // ═══════════════════════════════════════════════════════════════════════════
 
 // Publish or schedule classwork
-router.patch("/:classworkId/publish", protect, publishClasswork);
+router.patch("/:classworkId/publish", protect, authorize(["teacher"]), publishClasswork);
 
 // Close classwork (stop accepting submissions)
-router.patch("/:classworkId/close", protect, closeClasswork);
+router.patch("/:classworkId/close", protect, authorize(["teacher"]), closeClasswork);
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  SUBMISSIONS
 // ═══════════════════════════════════════════════════════════════════════════
 
 // Submit classwork (Student)
-router.post("/:classworkId/submit", protect, parseClassworkAttachments, submitClasswork);
+router.post("/:classworkId/submit", protect, authorize(["student"]), parseClassworkAttachments, submitClasswork);
 router.get("/submissions/:submissionId/attachments/:attachmentId", protect, downloadClassworkSubmissionAttachment);
 
 // Get all submissions for a classwork (Teacher/Admin only)
 router.get("/:classworkId/submissions", protect, getSubmissions);
 router.get("/:classworkId/grades", protect, authorize(["teacher", "admin"]), getClassworkGrades);
-router.put("/:classworkId/grades/:studentId", protect, authorize(["teacher", "admin"]), saveClassworkGrade);
+router.put("/:classworkId/grades/:studentId", protect, authorize(["teacher"]), saveClassworkGrade);
 
-// Grade a submission (Teacher/Admin only)
-router.patch("/submissions/:submissionId/grade", protect, gradeSubmission);
+// Grade a submission (Teacher only)
+router.patch("/submissions/:submissionId/grade", protect, authorize(["teacher"]), gradeSubmission);
 
 export default router;
