@@ -12,6 +12,7 @@ import User from "../models/user.ts";
 import AcademicYear from "../models/academicYear.ts";
 import { emitAcademicUpdate } from "../realtime.ts";
 import { removeStoredAttachment, saveAttachment, validateAttachment } from "../utils/attachments.ts";
+import { canStudentSubmitClasswork, getStudentClassworkStatus } from "../utils/classworkStatus.ts";
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  VALIDATION HELPERS
@@ -224,27 +225,19 @@ export const getClasswork = async (req: AuthRequest, res: Response): Promise<voi
     // Students should only see published classwork
     if (req.user?.role === "student") {
       filter.status = "published";
+      const enrolledClassIds = await Class.find({ students: req.user._id }).distinct("_id");
+
       if (classId) {
-        const enrolledClass = await Class.exists({
-          _id: classId,
-          ...(req.user.studentClass
-            ? {
-                gradeLevel: (await Class.findById(req.user.studentClass).select("gradeLevel").lean())?.gradeLevel,
-              }
-            : { students: req.user._id }),
-        });
-        if (!enrolledClass) {
+        const isEnrolled = enrolledClassIds.some((enrolledClassId) => enrolledClassId.toString() === classId.toString());
+        if (!isEnrolled) {
           res.status(403).json({ message: "You are not enrolled in this class" });
           return;
         }
+        filter.class = classId;
       } else {
-        const assignedClass = req.user.studentClass ? await Class.findById(req.user.studentClass).select("gradeLevel").lean() : null;
-        const enrolledClasses = await Class.find({
-          ...(assignedClass?.gradeLevel ? { gradeLevel: assignedClass.gradeLevel } : {}),
-          ...(req.user.studentClass ? {} : { students: req.user._id }),
-        }).select("_id").lean();
-        filter.class = { $in: enrolledClasses.map((enrolledClass) => enrolledClass._id) };
+        filter.class = { $in: enrolledClassIds };
       }
+
       if (req.query.includeSubmitted !== "true") {
         const submittedClassworkIds = await ClassworkSubmission.find({ student: req.user._id }).distinct("classwork");
         filter._id = { $nin: submittedClassworkIds };
@@ -295,14 +288,7 @@ export const getClassworkById = async (req: AuthRequest, res: Response): Promise
 
     if (req.user?.role === "student") {
       const classId = (classwork.class as any)?._id || classwork.class;
-      const enrolledClass = await Class.exists({
-        _id: classId,
-        ...(req.user.studentClass
-          ? {
-              gradeLevel: (await Class.findById(req.user.studentClass).select("gradeLevel").lean())?.gradeLevel,
-            }
-          : { students: req.user._id }),
-      });
+      const enrolledClass = await Class.exists({ _id: classId, students: req.user._id });
       if (!enrolledClass) {
         res.status(403).json({ message: "You are not enrolled in this class" });
         return;
@@ -525,21 +511,33 @@ export const submitClasswork = async (req: AuthRequest, res: Response): Promise<
     }
 
     const now = new Date();
-    const isLate = Boolean(classwork.dueDate && now > classwork.dueDate);
-
-    if (isLate && !classwork.allowLateSubmission) {
-      res.status(400).json({ message: "This classwork no longer accepts submissions" });
-      return;
-    }
-
-    // Check if already submitted
     const existingSubmission = await ClassworkSubmission.findOne({
       classwork: classworkId,
       student: req.user?._id,
     });
 
+    const submissionWindow = getStudentClassworkStatus({
+      dueDate: classwork.dueDate,
+      allowLateSubmission: classwork.allowLateSubmission,
+      hasSubmission: Boolean(existingSubmission),
+      submissionTime: existingSubmission?.submittedAt,
+      now,
+    });
+    const isLate = submissionWindow.isLateSubmission || Boolean(classwork.dueDate && now.getTime() > new Date(classwork.dueDate).getTime());
+
     if (existingSubmission && !req.body.isRevision) {
       res.status(400).json({ message: "You have already submitted this classwork. Use revision to update." });
+      return;
+    }
+
+    if (!canStudentSubmitClasswork({
+      dueDate: classwork.dueDate,
+      allowLateSubmission: classwork.allowLateSubmission,
+      hasSubmission: Boolean(existingSubmission),
+      submissionTime: existingSubmission?.submittedAt,
+      now,
+    }) && !req.body.isRevision) {
+      res.status(400).json({ message: "This classwork no longer accepts submissions" });
       return;
     }
 

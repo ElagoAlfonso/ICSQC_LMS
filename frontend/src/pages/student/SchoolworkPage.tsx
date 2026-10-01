@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ClipboardList, Clock, CheckCircle2 } from 'lucide-react';
-import { format, isBefore, isWithinInterval, startOfDay, startOfWeek, addDays } from 'date-fns';
+import { format, isWithinInterval, startOfWeek, addDays } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { Badge, Card, EmptyState } from '../../components/ui';
 import { classworkApi } from '../../utils/api';
@@ -60,16 +60,55 @@ export default function SchoolworkPage() {
     submission: submissionByClasswork.get(item._id),
   })), [classwork, submissionByClasswork]);
 
+  const getStudentWorkStatus = (item: WorkItem) => {
+    const dueDate = item.dueDate ? new Date(item.dueDate) : null;
+    const now = new Date();
+
+    if (item.submission) {
+      const submittedAt = item.submission.submittedAt ? new Date(item.submission.submittedAt) : null;
+      const isLate = Boolean(dueDate && submittedAt && submittedAt.getTime() > dueDate.getTime());
+      return {
+        label: isLate ? 'Done Late' : 'Done',
+        color: isLate ? 'yellow' : 'green',
+      } as const;
+    }
+
+    if (dueDate && now.getTime() > dueDate.getTime()) {
+      if (item.allowLateSubmission) {
+        return {
+          label: 'Past due',
+          color: 'yellow',
+        } as const;
+      }
+
+      return {
+        label: 'Missing',
+        color: 'red',
+      } as const;
+    }
+
+    return {
+      label: 'Assigned',
+      color: 'blue',
+    } as const;
+  };
+
   const visibleItems = useMemo(() => {
-    const today = startOfDay(new Date());
     return workItems
       .filter((item) => classFilter === 'all' || getId(item.class) === classFilter)
       .filter((item) => {
+        const dueDate = item.dueDate ? new Date(item.dueDate) : null;
+        const isPastDue = Boolean(dueDate && Date.now() > dueDate.getTime());
+
         if (tab === 'done') return Boolean(item.submission);
-        if (tab === 'missing') return Boolean(item.dueDate && !item.submission && isBefore(new Date(item.dueDate), today));
-        return !item.submission && (!item.dueDate || !isBefore(new Date(item.dueDate), today));
+        if (tab === 'missing') return Boolean(item.dueDate && !item.submission && isPastDue && !item.allowLateSubmission);
+        return !item.submission && (!item.dueDate || !isPastDue || item.allowLateSubmission);
       })
-      .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+      .sort((a, b) => {
+        const aDue = a.dueDate ? new Date(a.dueDate).getTime() : Number.MAX_SAFE_INTEGER;
+        const bDue = b.dueDate ? new Date(b.dueDate).getTime() : Number.MAX_SAFE_INTEGER;
+        return aDue - bDue;
+      });
   }, [classFilter, tab, workItems]);
 
   const groups = useMemo(() => {
@@ -121,10 +160,13 @@ export default function SchoolworkPage() {
                 {items.map((item) => {
                   const classItem = typeof item.class === 'object' ? item.class : null;
                   const subject = typeof item.subject === 'object' ? item.subject : null;
+                  const status = getStudentWorkStatus(item);
+                  const pastDue = item.dueDate ? Date.now() > new Date(item.dueDate).getTime() : false;
+                  const dueLabel = item.dueDate ? `${pastDue ? 'Past due • ' : ''}Due ${format(new Date(item.dueDate), 'MMM d, yyyy')}${item.dueTime ? ` at ${item.dueTime}` : ''}` : 'No due date';
                   return <button key={item._id} type="button" onClick={() => navigate(`/student/classes/${getId(item.class)}/classwork/${item._id}`)} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, width: '100%', padding: 12, textAlign: 'left', border: '1px solid #E5E7EB', background: '#fff', cursor: 'pointer' }}>
                     <span style={{ display: 'grid', placeItems: 'center', width: 34, height: 34, borderRadius: '50%', background: '#DBEAFE', color: '#2563EB', flexShrink: 0 }}><ClipboardList size={17} /></span>
-                    <span style={{ flex: 1, minWidth: 0 }}><strong style={{ display: 'block', color: '#111827' }}>{item.title}</strong><span style={{ display: 'block', marginTop: 3, color: '#64748B', fontSize: '0.78rem' }}>{classItem?.section || classItem?.name || 'Class'}{subject?.name ? ` · ${subject.name}` : ''}</span><span style={{ display: 'block', marginTop: 5, color: tab === 'missing' ? '#DC2626' : '#64748B', fontSize: '0.78rem' }}><Clock size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} />{item.dueDate ? `Due ${format(new Date(item.dueDate), 'MMM d, yyyy')}${item.dueTime ? ` at ${item.dueTime}` : ''}` : 'No due date'}</span></span>
-                    <Badge label={tab === 'done' ? 'Done' : item.type} color={tab === 'done' ? 'green' : tab === 'missing' ? 'red' : 'blue'} />
+                    <span style={{ flex: 1, minWidth: 0 }}><strong style={{ display: 'block', color: '#111827' }}>{item.title}</strong><span style={{ display: 'block', marginTop: 3, color: '#64748B', fontSize: '0.78rem' }}>{classItem?.section || classItem?.name || 'Class'}{subject?.name ? ` · ${subject.name}` : ''}</span><span style={{ display: 'block', marginTop: 5, color: tab === 'missing' || pastDue ? '#DC2626' : '#64748B', fontSize: '0.78rem' }}><Clock size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} />{dueLabel}</span></span>
+                    <Badge label={tab === 'done' ? status.label : tab === 'missing' ? 'Missing' : status.label === 'Past due' ? 'Past due' : item.type} color={status.color} />
                   </button>;
                 })}
               </div>

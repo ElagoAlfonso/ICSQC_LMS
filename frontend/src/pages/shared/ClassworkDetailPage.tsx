@@ -49,6 +49,10 @@ export default function ClassworkDetailPage() {
   useEffect(() => { load(); }, [classworkId, user?.role]);
 
   const submit = async () => {
+    if (isPastDue && !classwork.allowLateSubmission && !submission) {
+      toast.error('This assignment is past due and no longer accepts submissions.');
+      return;
+    }
     if (classwork?.submissionMode !== 'mark_done' && !notes.trim() && files.length === 0) {
       toast.error('Add notes or attach at least one file.');
       return;
@@ -76,6 +80,8 @@ export default function ClassworkDetailPage() {
   const teacherName = typeof classwork.createdBy === 'object' ? classwork.createdBy.name : 'Teacher';
   const subjectName = typeof classwork.subject === 'object' ? classwork.subject.name : 'Class subject';
   const dueDate = classwork.dueDate ? new Date(classwork.dueDate).toLocaleDateString(undefined, { dateStyle: 'medium' }) : null;
+  const isPastDue = Boolean(classwork.dueDate && new Date(classwork.dueDate).getTime() < Date.now());
+  const canSubmitNow = !isPastDue || classwork.allowLateSubmission || Boolean(submission);
   const questionCount = classwork.questionCount ?? classwork.questions?.length ?? 0;
   const questionPoints = classwork.questionPoints ?? classwork.questions?.map((question) => question.points) ?? [];
   const rubric = typeof classwork.rubric === 'object' ? classwork.rubric : null;
@@ -102,6 +108,11 @@ export default function ClassworkDetailPage() {
             <div style={{ color: '#7a1010', fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{subjectName} · {classwork.type}</div>
             <h1 style={{ margin: '8px 0 6px', fontSize: '1.7rem', color: 'var(--gray-900)' }}>{classwork.title}</h1>
             <p style={{ margin: 0, color: '#64748B' }}>Posted by {teacherName}{dueDate ? ` · Due ${dueDate}${classwork.dueTime ? ` at ${classwork.dueTime}` : ''}` : ''}</p>
+            {isPastDue && (
+              <p style={{ margin: '10px 0 0', color: classwork.allowLateSubmission ? '#B45309' : '#991B1B', fontWeight: 600 }}>
+                {classwork.allowLateSubmission ? 'Past due' : 'Past due — this assignment is closed for new submissions.'}
+              </p>
+            )}
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}><Badge label={classwork.status} color={classwork.status === 'published' ? 'green' : 'yellow'} /><Badge label={`${classwork.points} points`} color="blue" /></div>
         </div>
@@ -137,7 +148,7 @@ export default function ClassworkDetailPage() {
               <input type="file" multiple accept={SUPPORTED_ATTACHMENT_ACCEPT} onChange={event => { addFiles(event.target.files); event.currentTarget.value = ''; }} style={{ display: 'none' }} />
             </label>
             {files.length > 0 && <div style={{ display: 'grid', gap: 6 }}>{files.map((file, index) => <div key={`${file.name}-${index}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 9px', background: '#F1F5F9', borderRadius: 7, fontSize: '0.82rem' }}><span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span><button type="button" aria-label={`Remove ${file.name}`} onClick={() => setFiles(files.filter((_, fileIndex) => fileIndex !== index))} style={{ border: 0, background: 'transparent', color: '#64748B', cursor: 'pointer' }}><X size={15} /></button></div>)}</div>}
-            <Button size="sm" style={{ width: 'fit-content', minWidth: 150 }} loading={saving} icon={<CheckCircle2 size={16} />} onClick={submit}>{submission ? 'Revise submission' : classwork.submissionMode === 'mark_done' ? 'Mark as done' : 'Submit work'}</Button>
+            <Button size="sm" style={{ width: 'fit-content', minWidth: 150 }} loading={saving} disabled={!canSubmitNow} icon={<CheckCircle2 size={16} />} onClick={submit}>{submission ? 'Revise submission' : classwork.submissionMode === 'mark_done' ? 'Mark as done' : 'Submit work'}</Button>
           </div>
         </Card>
       )}
