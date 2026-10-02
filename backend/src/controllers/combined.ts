@@ -84,6 +84,27 @@ const validateTeacherExamAccess = async (user: AuthRequest["user"], classId?: st
   return { classDoc, subjectDoc };
 };
 
+export const buildTeacherAccessibleExamFilter = (
+  teacherId: string,
+  classIds: Array<string | { toString(): string }> = [],
+  subjectIds: Array<string | { toString(): string }> = []
+) => {
+  const normalizedClassIds = classIds.map((id) => String(id)).filter(Boolean);
+  const normalizedSubjectIds = subjectIds.map((id) => String(id)).filter(Boolean);
+
+  if (!normalizedClassIds.length && !normalizedSubjectIds.length) {
+    return { createdBy: teacherId };
+  }
+
+  return {
+    $or: [
+      { createdBy: teacherId },
+      ...(normalizedClassIds.length ? [{ class: { $in: normalizedClassIds } }] : []),
+      ...(normalizedSubjectIds.length ? [{ subject: { $in: normalizedSubjectIds } }] : []),
+    ],
+  };
+};
+
 export const createExam = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { class: classId, subject: subjectId, academicYear, status, startDate, endDate } = req.body;
@@ -153,7 +174,17 @@ export const getExams = async (req: AuthRequest, res: Response): Promise<void> =
     if (req.query.status) filter.status = req.query.status;
     if (req.query.subject) filter.subject = req.query.subject;
     if (req.query.class) filter.class = req.query.class;
-    if (req.user?.role === "teacher") filter.createdBy = req.user._id;
+    if (req.user?.role === "teacher") {
+      const teacherSubjectIds = await Subject.find({ teacher: req.user._id, isActive: true }).distinct("_id");
+      const teacherClassIds = await Class.find({
+        $or: [
+          { adviser: req.user._id },
+          { subjects: { $in: teacherSubjectIds } },
+        ],
+      }).distinct("_id");
+
+      Object.assign(filter, buildTeacherAccessibleExamFilter(req.user._id.toString(), teacherClassIds, teacherSubjectIds));
+    }
     if (req.user?.role === "student") {
       filter.status = "published";
       if (req.user.studentClass) {
@@ -762,6 +793,19 @@ export const getSubmissions = async (req: AuthRequest, res: Response): Promise<v
     const filter: any = {};
     if (req.query.exam) filter.exam = req.query.exam;
     if (req.query.student) filter.student = req.query.student;
+
+    if (req.user?.role === "teacher") {
+      const teacherSubjectIds = await Subject.find({ teacher: req.user._id, isActive: true }).distinct("_id");
+      const teacherClassIds = await Class.find({
+        $or: [
+          { adviser: req.user._id },
+          { subjects: { $in: teacherSubjectIds } },
+        ],
+      }).distinct("_id");
+
+      const examIds = await Exam.find(buildTeacherAccessibleExamFilter(req.user._id.toString(), teacherClassIds, teacherSubjectIds)).distinct("_id");
+      filter.exam = { $in: examIds };
+    }
 
     const submissions = await Submission.find(filter)
       .populate("student", "name email")
