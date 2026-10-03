@@ -22,7 +22,7 @@ ICSQC-LMS is a full-stack School Management System (SMS) + Learning Management S
 | **Database**| MongoDB (Mongoose)                |
 | **Auth**    | JWT (HttpOnly Cookies, 30-day)    |
 | **Security**| Helmet, bcryptjs, CORS            |
-| **AI**      | Google Gemini API (server-side) |
+| **AI**      | Google Gemini API (server-side)   |
 
 ---
 
