@@ -16,17 +16,15 @@ const EXAM_TYPES = [
   { value: 'midterm', label: 'Midterm Exam' },
   { value: 'summative', label: 'Summative Exam' },
   { value: 'final', label: 'Final Exam' },
-  { value: 'quiz', label: 'Quiz' },
   { value: 'periodical', label: 'Periodical' },
   { value: 'midterm', label: 'Midterm' },
   { value: 'finals', label: 'Finals' },
-  { value: 'assignment', label: 'Assignment' },
   { value: 'formative', label: 'Formative Assessment' },
 ];
 
 const INITIAL_FORM = {
   title: '', description: '', subject: '', class: '', academicYear: '',
-  examType: 'quiz', duration: '60', passingScore: '75',
+  examType: 'prelim', duration: '60', passingScore: '75',
   startDate: '', startTime: '08:00', endDate: '', endTime: '17:00', status: 'draft', randomizeQuestions: false,
 };
 
