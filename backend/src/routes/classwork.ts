@@ -8,6 +8,7 @@ import {
   publishClasswork,
   closeClasswork,
   submitClasswork,
+  startClassworkActivity,
   getSubmissions,
   getClassworkGrades,
   saveClassworkGrade,
@@ -34,6 +35,7 @@ router.get("/", protect, getClasswork);
 // Get my submissions (Student)
 router.get("/submissions/mine", protect, getMySubmissions);
 router.get("/grades/mine", protect, authorize(["student"]), getMyGrades);
+router.post("/:classworkId/start", protect, authorize(["student"]), startClassworkActivity);
 
 // Published lesson materials are served only to their class members.
 router.get("/:classworkId/attachments/:attachmentId", protect, downloadClassworkAttachment);

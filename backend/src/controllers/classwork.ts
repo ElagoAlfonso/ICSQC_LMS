@@ -4,6 +4,7 @@ import { logActivity } from "../utils/activitieslog.ts";
 import { createNotification, createNotifications } from "../utils/notifications.ts";
 import Classwork from "../models/classwork.ts";
 import ClassworkSubmission from "../models/classworkSubmission.ts";
+import StudentActivitySession from "../models/studentActivitySession.ts";
 import ClassworkGrade from "../models/classworkGrade.ts";
 import Rubric from "../models/rubric.ts";
 import Class from "../models/class.ts";
@@ -333,6 +334,54 @@ export const getClassworkById = async (req: AuthRequest, res: Response): Promise
   }
 };
 
+export const startClassworkActivity = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const classwork = await Classwork.findById(req.params.classworkId).select("class status type dueDate allowLateSubmission");
+    if (!classwork || classwork.status !== "published" || ["syllabus", "lesson"].includes(classwork.type)) {
+      res.status(404).json({ message: "Restricted classwork is not available." });
+      return;
+    }
+
+    const enrolled = await Class.exists({ _id: classwork.class, students: req.user!._id });
+    if (!enrolled) {
+      res.status(403).json({ message: "You are not enrolled in this class." });
+      return;
+    }
+
+    const submission = await ClassworkSubmission.exists({ classwork: classwork._id, student: req.user!._id });
+    if (submission) {
+      await StudentActivitySession.deleteOne({ classwork: classwork._id, student: req.user!._id });
+      res.status(200).json({ success: true, active: false });
+      return;
+    }
+
+    if (!canStudentSubmitClasswork({
+      dueDate: classwork.dueDate,
+      allowLateSubmission: classwork.allowLateSubmission,
+      hasSubmission: false,
+      now: new Date(),
+    })) {
+      await StudentActivitySession.deleteOne({ classwork: classwork._id, student: req.user!._id });
+      res.status(200).json({ success: true, active: false });
+      return;
+    }
+
+    await StudentActivitySession.updateOne(
+      { classwork: classwork._id, student: req.user!._id },
+      { $setOnInsert: { classwork: classwork._id, student: req.user!._id, startedAt: new Date() } },
+      { upsert: true },
+    );
+    res.status(200).json({ success: true, active: true });
+  } catch (error) {
+    if ((error as { code?: number }).code === 11000) {
+      res.status(200).json({ success: true, active: true });
+      return;
+    }
+    console.error("Unable to start classwork activity:", error);
+    res.status(500).json({ message: "Unable to start classwork activity." });
+  }
+};
+
 export const updateClasswork = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { classworkId } = req.params;
@@ -612,6 +661,7 @@ export const submitClasswork = async (req: AuthRequest, res: Response): Promise<
     }
 
     await submission.save();
+    await StudentActivitySession.deleteOne({ classwork: classworkId, student: req.user?._id });
   emitAcademicUpdate({ classId: classwork.class.toString(), kind: "submission" });
 
     // Update classwork submission count

@@ -65,6 +65,7 @@ export default function AIAssistantPage() {
   const [loading, setLoading] = useState(false);
   const [accessLoading, setAccessLoading] = useState(true);
   const [accessDenied, setAccessDenied] = useState(false);
+  const [accessMessage, setAccessMessage] = useState('The AI Reviewer cannot be used while you are taking an exam or completing schoolwork.');
   const [teacherSubject, setTeacherSubject] = useState('your subject');
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -84,18 +85,35 @@ export default function AIAssistantPage() {
 
   useEffect(() => {
     let mounted = true;
-    aiApi.getAccess()
-      .then(response => {
-        if (mounted) setAccessDenied(response.data?.allowed === false);
-      })
-      .catch(error => {
-        if (mounted) setAccessDenied(error.response?.status === 403 || error.response?.status === 503);
-      })
-      .finally(() => {
-        if (mounted) setAccessLoading(false);
-      });
-    return () => { mounted = false; };
-  }, []);
+    let latestCheck = 0;
+    const refreshAccess = () => {
+      const checkId = ++latestCheck;
+      aiApi.getAccess()
+        .then(response => {
+          if (!mounted || checkId !== latestCheck) return;
+          const denied = response.data?.allowed === false;
+          setAccessDenied(denied);
+          if (denied && response.data?.message) setAccessMessage(response.data.message);
+        })
+        .catch(error => {
+          if (!mounted || checkId !== latestCheck) return;
+          const denied = error.response?.status === 403 || error.response?.status === 503;
+          setAccessDenied(denied);
+          if (denied && error.response?.data?.message) setAccessMessage(error.response.data.message);
+        })
+        .finally(() => {
+          if (mounted && checkId === latestCheck) setAccessLoading(false);
+        });
+    };
+    refreshAccess();
+    const interval = window.setInterval(refreshAccess, 2000);
+    window.addEventListener('focus', refreshAccess);
+    return () => {
+      mounted = false;
+      window.clearInterval(interval);
+      window.removeEventListener('focus', refreshAccess);
+    };
+  }, [userId]);
 
   useEffect(() => {
     if (!isTeacher) return;
@@ -137,6 +155,12 @@ export default function AIAssistantPage() {
 
       // Call backend AI API
       const response = await aiApi.chat(messageText, history);
+      const latestAccess = await aiApi.getAccess();
+      if (latestAccess.data?.allowed === false) {
+        setAccessDenied(true);
+        setAccessMessage(latestAccess.data.message || 'The AI Reviewer cannot be used while you are taking an exam or completing schoolwork.');
+        return;
+      }
       const assistantText = response.data?.message || 'Sorry, I could not generate a response. Please try again.';
 
       const assistantMsg: ChatMessage = {
@@ -149,6 +173,11 @@ export default function AIAssistantPage() {
     } catch (err: any) {
       console.error('AI API Error:', err);
       const errorMessage = err.response?.data?.message;
+      if (err.response?.status === 403) {
+        setAccessDenied(true);
+        setAccessMessage(errorMessage || 'The AI Reviewer cannot be used while you are taking an exam or completing schoolwork.');
+        return;
+      }
       const errMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
@@ -157,8 +186,9 @@ export default function AIAssistantPage() {
       };
       setMessages(prev => [...prev, errMsg]);
       toast.error(errorMessage || 'Failed to get AI response');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -182,10 +212,6 @@ export default function AIAssistantPage() {
     return <Card padding="48px"><p style={{ margin: 0, textAlign: 'center', color: 'var(--gray-500)' }}>Checking AI access...</p></Card>;
   }
 
-  if (accessDenied) {
-    return <Card padding="48px"><div style={{ textAlign: 'center' }}><h2 style={{ margin: '0 0 8px', color: 'var(--gray-900)' }}>Ezra is unavailable</h2><p style={{ margin: 0, color: 'var(--gray-500)' }}>Ezra isn't available while you're answering an active assessment. Please finish your assessment first.</p></div></Card>;
-  }
-
   const suggestions = isTeacher ? getTeacherSuggestions(teacherSubject) : SUGGESTED_PROMPTS_STUDENT;
 
   return (
@@ -200,8 +226,15 @@ export default function AIAssistantPage() {
             {isTeacher ? 'Create exams, lessons, and manage your teaching schedule' : 'Review lessons, prepare for exams, and get study help'}
           </p>
         </div>
-        <Button variant="secondary" size="sm" icon={<RefreshCw size={14} />} onClick={clearChat}>Clear Chat</Button>
+        <Button variant="secondary" size="sm" icon={<RefreshCw size={14} />} onClick={clearChat} disabled={accessDenied}>Clear Chat</Button>
       </div>
+
+      {accessDenied && (
+        <div role="status" style={{ padding: '16px 20px', border: '1px solid #FECACA', borderLeft: '4px solid #B91C1C', borderRadius: 8, background: '#FEF2F2' }}>
+          <h2 style={{ margin: '0 0 4px', fontSize: '1rem', color: '#991B1B' }}>Not Available</h2>
+          <p style={{ margin: 0, color: '#7F1D1D', fontSize: '0.875rem', lineHeight: 1.5 }}>{accessMessage}</p>
+        </div>
+      )}
 
       {/* Chat window */}
       <div style={{
@@ -273,7 +306,7 @@ export default function AIAssistantPage() {
         </div>
 
         {/* Suggestions */}
-        {messages.length <= 1 && (
+          {!accessDenied && messages.length <= 1 && (
           <div style={{ padding: '0 20px 12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             {suggestions.map((s, i) => (
               <button key={i} onClick={() => sendMessage(s.text)} style={{
@@ -307,7 +340,8 @@ export default function AIAssistantPage() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={isTeacher ? 'Ask me to create an exam, lesson plan, or anything teaching-related...' : 'Ask me to explain a topic, help you study, or review for your exam...'}
+            disabled={accessDenied || accessLoading}
+            placeholder={accessDenied ? 'AI Reviewer is not available right now' : isTeacher ? 'Ask me to create an exam, lesson plan, or anything teaching-related...' : 'Ask me to explain a topic, help you study, or review for your exam...'}
             rows={1}
             style={{
               flex: 1, padding: '11px 14px',
@@ -317,6 +351,8 @@ export default function AIAssistantPage() {
               maxHeight: '120px', overflowY: 'auto',
               fontFamily: 'var(--font-body)',
               lineHeight: 1.5, color: 'var(--gray-900)',
+              background: accessDenied ? 'var(--gray-100)' : '#fff',
+              cursor: accessDenied ? 'not-allowed' : 'text',
             }}
             onInput={(e) => {
               const t = e.target as HTMLTextAreaElement;
@@ -328,15 +364,15 @@ export default function AIAssistantPage() {
           />
           <button
             onClick={() => sendMessage()}
-            disabled={!input.trim() || loading}
+            disabled={!input.trim() || loading || accessDenied || accessLoading}
             style={{
               width: 42, height: 42, borderRadius: '12px', flexShrink: 0,
-              background: !input.trim() || loading ? '#E5E7EB' : 'linear-gradient(135deg, #8B1A1A, #A52828)',
-              border: 'none', cursor: !input.trim() || loading ? 'not-allowed' : 'pointer',
+              background: !input.trim() || loading || accessDenied || accessLoading ? '#E5E7EB' : 'linear-gradient(135deg, #8B1A1A, #A52828)',
+              border: 'none', cursor: !input.trim() || loading || accessDenied || accessLoading ? 'not-allowed' : 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: !input.trim() || loading ? '#9CA3AF' : '#fff',
+              color: !input.trim() || loading || accessDenied || accessLoading ? '#9CA3AF' : '#fff',
               transition: 'all 0.15s',
-              boxShadow: !input.trim() || loading ? 'none' : '0 2px 8px rgba(139,26,26,0.3)',
+              boxShadow: !input.trim() || loading || accessDenied || accessLoading ? 'none' : '0 2px 8px rgba(139,26,26,0.3)',
             }}
           >
             <Send size={17} />

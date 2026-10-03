@@ -199,6 +199,7 @@ export const classworkApi = {
   create: (data: FormData) => api.post('/classwork', data, { headers: { 'Content-Type': 'multipart/form-data' } }),
   getAll: (params?: any) => api.get('/classwork', { params }),
   getById: (id: string) => api.get(`/classwork/${id}`),
+  startActivity: (id: string) => api.post(`/classwork/${id}/start`),
   update: (id: string, data: any) => api.put(`/classwork/${id}`, data),
   delete: (id: string) => api.delete(`/classwork/${id}`),
   publish: (id: string, data: any = {}) => api.patch(`/classwork/${id}/publish`, data),

@@ -42,6 +42,9 @@ export default function ClassworkDetailPage() {
       setClasswork(detail);
 
       if (user?.role === 'student') {
+        if (detail.type !== 'syllabus' && detail.type !== 'lesson') {
+          await classworkApi.startActivity(classworkId!);
+        }
         const response = await classworkApi.getMySubmissions();
         const items = (response.data.submissions || []) as ClassworkSubmission[];
         const current = items.find((item) => {
