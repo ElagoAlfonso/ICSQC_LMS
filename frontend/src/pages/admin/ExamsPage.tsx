@@ -489,7 +489,7 @@ export default function AdminExamsPage() {
       </Card>
 
       {/* Create / Edit Modal */}
-      {user?.role === 'teacher' && (
+      {(user?.role === 'teacher' || (user?.role === 'admin' && !!editExam)) && (
       <Modal open={examModal} onClose={() => setExamModal(false)} title={editExam ? 'Edit Exam' : 'Create Exam'} width="680px"
         footer={qTab === 'info'
           ? <><Button variant="secondary" onClick={() => setExamModal(false)}>Cancel</Button><Button onClick={continueToQuestions} icon={<ArrowRight size={14} />}>Continue to questions</Button></>
