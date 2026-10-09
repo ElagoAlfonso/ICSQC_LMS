@@ -5,6 +5,18 @@ import Class from "../models/class.ts";
 import ClassworkSubmission from "../models/classworkSubmission.ts";
 import Classwork from "../models/classwork.ts";
 
+export const canAccessClassworkSubmissionAttachment = (access: {
+  role?: string;
+  userId?: string;
+  studentId: string;
+  classworkCreatorId?: string;
+  isAssignedTeacher?: boolean;
+}) => access.role === "admin"
+  || access.userId === access.studentId
+  || (access.role === "teacher" && (
+    access.classworkCreatorId === access.userId || access.isAssignedTeacher === true
+  ));
+
 export const downloadAnnouncementAttachment = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const announcement = await Announcement.findById(req.params.postId).select("author subject targetClass attachments");
@@ -42,9 +54,19 @@ export const downloadClassworkSubmissionAttachment = async (req: AuthRequest, re
     const submission = await ClassworkSubmission.findById(req.params.submissionId).select("student classwork class attachments");
     if (!submission) { res.status(404).json({ message: "Submission not found." }); return; }
     const isOwner = submission.student.toString() === req.user?._id.toString();
-    const classwork = await (await import("../models/classwork.ts")).default.findById(submission.classwork).select("createdBy");
-    const isTeacher = classwork?.createdBy.toString() === req.user?._id.toString();
-    if (req.user?.role !== "admin" && !isOwner && !isTeacher) {
+    const classwork = await Classwork.findById(submission.classwork).select("createdBy class");
+    const isClassworkTeacher = req.user?.role === "teacher" && classwork?.createdBy.toString() === req.user._id.toString();
+    const isAssignedTeacher = req.user?.role === "teacher" && Boolean(await Class.exists({
+      _id: classwork?.class,
+      $or: [{ adviser: req.user._id }, { coTeachers: req.user._id }],
+    }));
+    if (!canAccessClassworkSubmissionAttachment({
+      role: req.user?.role,
+      userId: req.user?._id.toString(),
+      studentId: submission.student.toString(),
+      classworkCreatorId: classwork?.createdBy.toString(),
+      isAssignedTeacher,
+    })) {
       res.status(403).json({ message: "You are not authorized to access this attachment." });
       return;
     }
